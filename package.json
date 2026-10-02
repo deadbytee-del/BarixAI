@@ -16,7 +16,8 @@
     "serve": "node scripts/serve.mjs --base /BarixAI/ --dir apps/web/dist",
     "bench": "node scripts/bench.mjs",
     "bench:context": "node --expose-gc scripts/bench-context.mjs",
-    "barixterm": "node apps/term/bin/barixterm.js"
+    "barixterm": "node apps/term/bin/barixterm.js",
+    "start": "node scripts/build-web.mjs && node scripts/serve.mjs --base / --dir apps/web/dist --port 8080"
   },
   "engines": {
     "node": ">=20"
@@ -34,5 +35,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/deadbytee-del/BarixAI"
-  }
+  },
+  "homepage": "https://deadbytee-del.github.io/BarixAI/"
 }

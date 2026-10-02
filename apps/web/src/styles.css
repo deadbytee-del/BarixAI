@@ -40,3 +40,23 @@ dialog{border:1px solid var(--line);border-radius:16px;background:var(--panel);c
 .welcome{max-width:44rem;margin:2rem auto;display:flex;flex-direction:column;gap:1rem}.welcome h1{font-size:1.6rem;margin:0}.tiers{display:grid;gap:.6rem}.tier{border:1px solid var(--line);border-radius:12px;padding:.7rem .9rem;background:var(--panel);display:flex;gap:.8rem;align-items:center}.tier.rec{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 25%,transparent)}.tier .grow{flex:1}.progress{height:8px;background:var(--panel2);border-radius:99px;overflow:hidden}.progress i{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
 @media (max-width:860px){.app{grid-template-columns:1fr;grid-template-areas:"top" "chat"}.files,.inside{position:fixed;top:0;bottom:0;z-index:20;width:min(88vw,340px);box-shadow:var(--shadow);padding-top:env(safe-area-inset-top)}.files{left:0}.inside{right:0}.app[data-files="closed"] .files,.app[data-inside="closed"] .inside{display:none}.chips{display:none}.top select{max-width:7rem}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* ---- welcome / hero ---- */
+.welcome{max-width:44rem;margin:clamp(1rem,6vh,3.5rem) auto 2rem;gap:1.1rem}
+.hero{text-align:center}.hero h1{font-size:clamp(1.5rem,4.5vw,2.2rem);line-height:1.15;margin:.2rem 0 .6rem;letter-spacing:-.02em}
+.lead{color:var(--muted);max-width:34rem;margin:0 auto;font-size:1.02rem}
+.starters{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center}
+.starter{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:.45rem .9rem;font-size:.88rem;color:var(--text);box-shadow:var(--shadow)}
+.starter:hover{border-color:var(--accent)}
+.model-card{display:flex;flex-direction:column;gap:.8rem;background:var(--panel)}
+.model-card .tier{border:0;padding:.2rem 0 0;background:none;box-shadow:none}
+.more{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:.55rem .9rem}.more summary{cursor:pointer;font-weight:600;font-size:.9rem}.more .tiers{margin:.7rem 0}
+.center{text-align:center}
+.welcome .kv{grid-template-columns:5.5rem 1fr}
+/* ---- polish ---- */
+.messages{padding-bottom:1.5rem}
+.tabs{overflow-x:auto;scrollbar-width:none}.tabs button{padding:.55rem .5rem;font-size:.8rem;white-space:nowrap;min-width:0}
+.composer .row textarea{min-width:0}
+.bubble img{max-width:100%}
+.tree .row span:nth-child(2){overflow:hidden;text-overflow:ellipsis}
+@media (max-width:860px){.welcome{margin-top:1rem}.starter{font-size:.82rem}}

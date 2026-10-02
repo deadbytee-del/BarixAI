@@ -7,9 +7,11 @@ user request → task understanding → context retrieval → tool selection →
             → tool execution → result inspection → correction → verification gate → final response
 ```
 
+**▶ Use it in your browser: https://deadbytee-del.github.io/BarixAI/** (after you enable Pages once — see [docs/DEPLOY.md](docs/DEPLOY.md)). Or locally: `npm start` → http://127.0.0.1:8080/
+
 | Surface | What it is | Run it |
 |---|---|---|
-| **Browser app** | Static site (GitHub Pages compatible, works under any repo subpath). Model runs in your browser (WebGPU/WASM); files live in OPFS or a local folder you open. | `npm run build:web && npm run serve` → http://127.0.0.1:8080/BarixAI/ |
+| **Browser app (the main site)** | Static site (GitHub Pages compatible, works under any repo subpath). Model runs in your browser (WebGPU/WASM); files live in OPFS or a local folder you open. | `npm start` |
 | **BarixTerm** | Local agent with real filesystem, git, GitHub, commands, builds, tests, local models. Same core as the browser. | `BarixTerm.bat` (Windows) · `./BarixTerm.sh` (macOS/Linux) · `npm run barixterm` |
 
 ## Quick start

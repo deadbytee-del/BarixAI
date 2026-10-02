@@ -120,6 +120,7 @@ function verifyBox(r) {
 async function send(text) {
   text = text.trim(); if (!text && !S.attachments.length) return; if (S.busy) return;
   if (text.startsWith("/") && !S.attachments.length) return slash(text);
+  $(".welcome")?.remove();
   const images = S.attachments.splice(0); P.renderAttachments();
   const hasRemote = S.endpoints.length > 0 || (S.workers ?? 0) > 0;
   userBubble(text, images); $("#input").value = ""; autosize(); S.busy = true; toggleBusy();
@@ -166,14 +167,18 @@ export function chips() {
 
 // ------------------------------------------------------------------ welcome
 function showWelcome() {
-  const rec = S.rec; if (!rec) return; const cfg = modelConfig();
-  const tier = (m) => { const dev = m === rec.model ? rec.device : (S.hw.webgpu && S.hw.f16 ? "webgpu" : "wasm"); const c = m[dev]; const isRec = m === rec.model; return h("div", { class: "tier" + (isRec ? " rec" : "") }, h("div", { class: "grow" }, h("strong", { text: m.name }), isRec ? h("span", { class: "chip ok", style: "margin-left:.5rem", text: "recommended for this device" }) : null, h("div", { class: "note", text: `${m.note} · ~${c.mb} MB · ${dev === "webgpu" ? "WebGPU" : "WebAssembly (CPU)"} · ${Math.round(m.window[dev] / 1024)}k context window` })), h("button", { class: isRec ? "primary" : "secondary", onclick: () => { S.chosen = { id: m.id, device: dev }; store.set("barix.model", S.chosen); openProject(S.project).then(() => loadModel()); } }, isRec ? "Start" : "Use this"));
+  const rec = S.rec; if (!rec) return; const cfg = modelConfig(); const hasRemote = S.endpoints.length > 0;
+  const starters = ["Build a to-do app in plain HTML, CSS and JS", "Explain how a binary search works, briefly", "Review the files I upload for bugs"];
+  const dev = (m) => (m === rec.model ? rec.device : (S.hw.webgpu && S.hw.f16 ? "webgpu" : "wasm"));
+  const tier = (m) => { const d = dev(m), c = m[d] ?? m.wasm, isRec = m === rec.model; return h("div", { class: "tier" + (isRec ? " rec" : "") }, h("div", { class: "grow" }, h("strong", { text: m.name }), isRec ? h("span", { class: "chip ok", style: "margin-left:.5rem", text: "recommended" }) : null, h("div", { class: "note", text: `${m.note} ~${c.mb} MB · ${d === "webgpu" ? "WebGPU" : "CPU (WebAssembly)"} · ${Math.round(m.window[d] / 1024)}k window` })), h("button", { class: isRec ? "primary" : "secondary", onclick: () => { S.chosen = { id: m.id, device: d }; store.set("barix.model", S.chosen); openProject(S.project).then(() => loadModel()); } }, isRec ? "Download & start" : "Use this"));
   };
-  const w = h("div", { class: "welcome" }, h("h1", { text: "Barix" }), h("p", { text: "A custom AI runtime: its own context engine, memory, code intelligence, tools and verification — running locally in your browser. No account, no server." }),
-    h("div", { class: "card" }, h("h4", { text: "Your device" }), h("div", { class: "kv" }, h("span", { text: "Acceleration" }), h("span", { text: rec.reason }), h("span", { text: "Memory / cores" }), h("span", { text: `${S.hw.memGB ?? "?"} GB reported · ${S.hw.cores} cores` }), h("span", { text: "Local files" }), h("span", { text: S.hw.opfs ? "persistent browser storage (OPFS) ✓" + (S.hw.fsAccess ? " · local folders ✓" : "") : "OPFS unavailable — projects will not persist" }))),
-    h("div", { class: "tiers" }, [rec.model, ...rec.alternatives].map(tier)),
-    h("p", { class: "note", text: FOUNDATION_NOTE + " Weights download once from Hugging Face and are cached by your browser. Prefer your own server or volunteer workers? Open Inside Barix → Compute." }),
-    h("p", { class: "note", text: "Barix reports only what it verified: file changes are re-read from disk, builds and tests must actually run, and every answer shows its verification." }));
+  const w = h("div", { class: "welcome" },
+    h("div", { class: "hero" }, h("h1", { text: "What can Barix build for you?" }), h("p", { class: "lead", text: "Your own AI engineer with real memory, code understanding and verified results — running privately in this browser. No account, no server." })),
+    h("div", { class: "starters" }, starters.map((t) => h("button", { class: "starter", type: "button", onclick: () => { const i = $("#input"); i.value = t; i.focus(); autosize(); } }, t))),
+    h("div", { class: "card model-card" }, h("div", { class: "kv" }, h("span", { text: "Model" }), h("span", { text: hasRemote ? "your connected server (see Inside Barix → Compute)" : S.modelReady ? cfg.name + " · ready" : cfg.name + " · not downloaded yet" }), h("span", { text: "Runs on" }), h("span", { text: rec.reason }), h("span", { text: "Your files" }), h("span", { text: S.hw.opfs ? "stay in this browser (OPFS)" + (S.hw.fsAccess ? " · or open a local folder" : "") : "OPFS unavailable — projects will not persist" })),
+      hasRemote ? null : tier(rec.model)),
+    h("details", { class: "more" }, h("summary", { text: "Other model sizes & compute options" }), h("div", { class: "tiers" }, rec.alternatives.map(tier)), h("p", { class: "note", text: "Prefer your own server or volunteer workers? Open Inside Barix → Compute. " + FOUNDATION_NOTE })),
+    h("p", { class: "note center", text: "Barix reports only what it verified: file changes are re-read from disk and builds/tests must actually run." }));
   msgs().append(w);
 }
 

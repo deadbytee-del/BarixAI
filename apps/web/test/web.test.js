@@ -11,7 +11,8 @@ const noErrors = (errors) => assert.deepEqual(errors.filter((e) => !/favicon|Fai
 test("boots under a repository subpath, is cross-origin isolated, probes hardware, shows the honest welcome screen", async () => {
   const { page, errors, ctx } = await openBarix(browser, srv.url, null);
   assert.equal(await page.title(), "Barix"); assert.equal(await page.evaluate(() => crossOriginIsolated), true, "COOP/COEP service-worker shim gives SharedArrayBuffer on static hosting");
-  assert.match(await page.locator(".welcome").innerText(), /Barix Lite[\s\S]*Barix Core[\s\S]*Barix Pro/); assert.match(await page.locator(".welcome").innerText(), /WebAssembly|WebGPU/);
+  assert.match(await page.locator(".welcome").innerText(), /What can Barix build for you/); await page.locator(".welcome summary").click(); assert.match(await page.locator(".welcome").innerText(), /Barix Lite[\s\S]*Barix Core[\s\S]*Barix Pro/); assert.match(await page.locator(".welcome").innerText(), /WebAssembly|WebGPU/);
+  await page.locator(".starter").first().click(); assert.match(await page.inputValue("#input"), /to-do app/, "starter prompts fill the composer");
   const hw = await page.evaluate(() => window.__barix.hw); assert.equal(hw.opfs, true); assert.ok(hw.cores >= 1);
   const base = await page.evaluate(() => window.__barix.base); assert.equal(new URL(base).pathname, "/BarixAI/");
   noErrors(errors); await ctx.close();
