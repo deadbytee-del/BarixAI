@@ -34,7 +34,8 @@ test("protocol parser: canonical, Qwen JSON, Qwen XML, fenced; reports malformed
 test("schema validation gives model-readable errors and coerces sloppy types", () => {
   const s = { type: "object", properties: { n: { type: "integer", minimum: 1 }, t: { type: "string" }, e: { type: "array", items: { type: "string" } } }, required: ["t"], additionalProperties: false };
   assert.deepEqual(validate(s, { t: "x", n: "3" }).value, { t: "x", n: 3 });
-  assert.match(validate(s, { n: 0, z: 1 }).errors.join("|"), /t: required.*n: must be >= 1.*z: unknown parameter/s);
+  assert.match(validate(s, { n: 0 }).errors.join("|"), /t: required.*n: must be >= 1/s);
+  const w = validate(s, { t: "x", z: 1 }); assert.equal(w.ok, true); assert.deepEqual(w.warnings, ["args.z"]); assert.ok(!("z" in w.value), "unknown params are stripped, not passed to the tool");
 });
 
 test("executor: guards block blind edits, writes are verified, evidence recorded, syntax errors surface", async () => {
@@ -51,7 +52,7 @@ test("executor: guards block blind edits, writes are verified, evidence recorded
   x = await r.call("patch_file", { path: "src/a.js", edits: [{ search: "tampered", replace: "x" }] }); assert.match(x.output, /changed since you last read/);
   assert.equal(r.ledger.records.filter((e) => e.kind === "fs-write").length, 3);
   x = await r.call("nope_tool", {}); assert.match(x.output, /Unknown tool/); x = await r.call("read_fle", { path: "x" }); assert.match(x.output, /Did you mean "read_file"/);
-  x = await r.call("read_file", { path: 5 }); assert.match(x.output, /expected string/); x = await r.call("run_tests", {}); assert.match(x.output, /Unknown tool/);
+  x = await r.call("read_file", { path: 5 }); assert.match(x.output, /expected string/); x = await r.call("list_dir", { bogus: 1 }); assert.equal(x.ok, true); assert.match(x.output, /ignored unknown parameter\(s\) bogus/); x = await r.call("run_tests", {}); assert.match(x.output, /Unknown tool/);
 });
 
 test("code tools: search_code, find_symbol, outline, references, impact, move keeps evidence", async () => {

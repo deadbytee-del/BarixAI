@@ -39,3 +39,7 @@ export function dataChannelTransport(dc, label = "webrtc-peer") {
     get bufferedAmount() { return dc.bufferedAmount ?? 0; },
   };
 }
+
+/** Browser/Node WebSocket (client or `ws` server socket) as a Barix transport. Same wire format as WebRTC. */
+export function webSocketTransport(ws, label = "websocket-peer") { return dataChannelTransport(ws, label); }
+export function connectWebSocket(url, { WS = globalThis.WebSocket, label } = {}) { const ws = new WS(url); return webSocketTransport(ws, label ?? url); }

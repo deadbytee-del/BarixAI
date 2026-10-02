@@ -58,6 +58,7 @@ export class ToolExecutor {
       const ac = new AbortController(); const to = setTimeout(() => ac.abort(), tool.timeoutMs); signal?.addEventListener("abort", () => ac.abort(), { once: true });
       let res; try { res = await Promise.race([tool.run(v.value, { ...this.ctx, signal: ac.signal }), new Promise((_, rej) => ac.signal.addEventListener("abort", () => rej(new BarixError("ETIMEOUT", `${call.tool} timed out after ${tool.timeoutMs}ms`)), { once: true }))]); } finally { clearTimeout(to); }
       let out = this.ctx.redact === false ? res.output : redactSecrets(res.output ?? "");
+      if (v.warnings?.length) out += `\n[Barix note: ignored unknown parameter(s) ${v.warnings.map((w) => w.replace(/^args\./, "")).join(", ")}; ${call.tool} accepts: ${Object.keys(tool.parameters?.properties ?? {}).join(", ") || "no parameters"}]`;
       if (this.counter.count(out) > this.maxResultTokens) { const full = this.counter.count(out); out = this.counter.truncate(out, this.maxResultTokens) + `\n[… output truncated: ${full} tokens total; narrow the request (line range, glob, pattern) to see the rest …]`; }
       const ev = res.evidence ? this.ledger.record({ tool: call.tool, args: v.value, ok: res.ok, ...res.evidence }) : null;
       const r = { call, ok: res.ok, output: out, data: res.data, evidence: ev?.id, meta: { tool: call.tool, ok: res.ok, ...(v.value.path ? { path: v.value.path } : {}), ...res.meta }, ms: now() - t0 };

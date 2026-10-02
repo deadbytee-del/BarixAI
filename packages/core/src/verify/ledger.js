@@ -30,6 +30,7 @@ export class EvidenceLedger {
     switch (c.type) {
       case "file": return this.#checkFile(c);
       case "build": case "test": case "lint": return this.#checkRun(c);
+      case "deploy": { const e = this.last("pages-verified"); return e?.ok ? { status: "verified", evidence: e.id } : { status: "unverified", reason: "no verified Pages deployment (build status + live URL check) was recorded" }; }
       case "remote": { const e = this.last("remote-verified"); return e?.ok ? { status: "verified", evidence: e.id } : { status: "unverified", reason: "no remote verification (fetching the pushed ref / Pages status) was recorded" }; }
     }
     return { status: "unverified", reason: "unknown claim type" };
@@ -69,7 +70,8 @@ const NOT_FILES = /^(e\.g|i\.e|vs|etc|v\d|node\.js|vue\.js|next\.js|react\.js|\d
 const BUILD = /\bbuild(?:s|ing)?\b[^.\n]{0,50}\b(?:succe\w+|pass\w*|work\w*|complet\w+|clean|fine|ok|without (?:errors|issues))\b|\b(?:successfully|cleanly)\s+(?:built|compiled|bundled)\b|\b(?:compiles|bundles)\s+(?:cleanly|successfully|fine|without)/i;
 const TEST = /\b(?:all\s+)?(?:\d+\s+)?tests?\b[^.\n]{0,50}\b(?:pass\w*|green|succe\w+)\b|\btest suite\b[^.\n]{0,30}\bpass\w*|\bno (?:test )?failures\b/i;
 const LINT = /\blint(?:er|ing)?\b[^.\n]{0,40}\b(?:clean|pass\w*|no (?:errors|warnings|issues))\b/i;
-const REMOTE = /\b(?:pushed|published|deployed|released)\b[^.\n]{0,70}\b(?:github|origin|remote|pages|branch|main|master)\b|\b(?:is|are) (?:now )?(?:live|deployed)\b/i;
+const REMOTE = /\b(?:pushed|published|released)\b[^.\n]{0,70}\b(?:github|origin|remote|branch|main|master)\b/i;
+const DEPLOY = /\b(?:deployed|(?:is|are) (?:now )?(?:live|up and running|available online)|published to (?:github )?pages|pages (?:site |build |deployment )?(?:is |has )?(?:live|deployed|succe\w+|built))\b/i;
 
 export function extractClaims(text) {
   const claims = []; const seen = new Set();
@@ -78,7 +80,7 @@ export function extractClaims(text) {
   for (const s of sentences) {
     if (HEDGE.test(s)) continue;
     const push = (type, extra = {}) => { const k = type + (extra.path ?? "") + (extra.action ?? ""); if (seen.has(k)) return; seen.add(k); claims.push({ type, sentence: s.slice(0, 200), ...extra }); };
-    if (BUILD.test(s)) push("build"); if (TEST.test(s)) push("test"); if (LINT.test(s)) push("lint"); if (REMOTE.test(s)) push("remote");
+    if (BUILD.test(s)) push("build"); if (TEST.test(s)) push("test"); if (LINT.test(s)) push("lint"); if (REMOTE.test(s)) push("remote"); if (DEPLOY.test(s)) push("deploy");
     const v = FILE_VERB.exec(s);
     if (v) {
       const verb = v[1].toLowerCase(); const action = /remov|delet/.test(verb) ? "delete" : /renam|moved/.test(verb) ? "move" : "write";
@@ -97,4 +99,4 @@ export function renderVerification(v) {
   for (const c of v.unverified) L.push(`? ${label(c)} — not verified: ${c.reason}`);
   return L.join("\n");
 }
-const label = (c) => (c.type === "file" ? `${c.action === "delete" ? "deleted" : c.action === "move" ? "moved" : "changed"} ${c.path}` : c.type === "remote" ? "remote publish/deploy" : `${c.type} ok`);
+const label = (c) => (c.type === "file" ? `${c.action === "delete" ? "deleted" : c.action === "move" ? "moved" : "changed"} ${c.path}` : c.type === "remote" ? "pushed to remote" : c.type === "deploy" ? "deployed (live site verified)" : `${c.type} ok`);

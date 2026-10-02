@@ -1,0 +1,13 @@
+{
+  "name": "barixterm",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "BarixTerm: the local Barix agent (filesystem, git, GitHub, commands, builds, tests, local models).",
+  "bin": {
+    "barixterm": "bin/barixterm.js"
+  },
+  "dependencies": {
+    "@barix/core": "*",
+    "ws": "^8.22.0"
+  }
+}

@@ -16,7 +16,7 @@ function normalize(schema, value) {
 }
 export function validate(schema, value, path = "args") {
   if (path === "args") value = normalize(schema, value);
-  const errs = [];
+  const errs = []; let warnings;
   const t = schema.type;
   const actual = value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
   if (t && !(t === actual || (t === "integer" && Number.isInteger(value)) || (t === "number" && actual === "number"))) {
@@ -33,8 +33,8 @@ export function validate(schema, value, path = "args") {
   if (t === "object" && schema.properties) {
     out = { ...value };
     for (const k of schema.required ?? []) if (!(k in value) || value[k] === undefined) errs.push(`${path}.${k}: required`);
-    for (const [k, sub] of Object.entries(schema.properties)) if (k in value && value[k] !== undefined) { const r = validate(sub, value[k], `${path}.${k}`); if (!r.ok) errs.push(...r.errors); else out[k] = r.value; }
-    if (schema.additionalProperties === false) for (const k of Object.keys(value)) if (!(k in schema.properties)) errs.push(`${path}.${k}: unknown parameter (allowed: ${Object.keys(schema.properties).join(", ")})`);
+    for (const [k, sub] of Object.entries(schema.properties)) if (k in value && value[k] !== undefined) { const r = validate(sub, value[k], `${path}.${k}`); if (!r.ok) errs.push(...r.errors); else { out[k] = r.value; if (r.warnings) (warnings ??= []).push(...r.warnings); } }
+    if (schema.additionalProperties === false) for (const k of Object.keys(value)) if (!(k in schema.properties)) { delete out[k]; (warnings ??= []).push(`${path}.${k}`); }
   }
-  return errs.length ? { ok: false, errors: errs } : { ok: true, value: out, errors: [] };
+  return errs.length ? { ok: false, errors: errs } : { ok: true, value: out, errors: [], ...(warnings ? { warnings } : {}) };
 }
