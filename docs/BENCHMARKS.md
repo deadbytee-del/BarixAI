@@ -32,3 +32,15 @@ Model: Qwen3.5-0.8B ONNX q4 (CPU, onnxruntime-node). Warm load 28949 ms.
 - Heuristic estimator error vs real tokenizer: 10.3%, 10.6%, 0.1% → after calibration (scale 0.919): 1.4%, 1.6%, 8.2%
 - Real tokenizer 235 calls/s vs cached estimator 22222 calls/s
 - Embeddings: neural (Xenova/all-MiniLM-L6-v2 q8) 353 chunks/s, load 1343 ms; hash baseline 26446 chunks/s
+
+## Model-step speed: prefix state cache (real Qwen3.5-0.8B q4, Node CPU, 4 cores)
+Measured with the real model (not scripted). On CPU, prefill costs ~11 ms per prompt token and does *not* depend on quantisation (q8 was no faster), and an agent resends the ~600-token system prompt plus the whole conversation every step.
+Barix now keeps the model state (KV + this hybrid model's conv/recurrent state) for the stable prefix — everything before the last message — and gives each request a clone, so only new tokens are prefilled.
+
+| request | before | after |
+|---|---|---|
+| 605-token system prompt + short question | 8.3–9.5 s | 0.95–1.4 s (identical output) |
+| agent step with a 1.7k-token conversation | ~19 s of prefill | only the ~500 new tokens are prefilled |
+| real end-to-end task (fix `add`, 6 steps, `scripts/real-agent-demo.mjs`) | 116–161 s | 106 s (short histories; the gain grows with conversation length) |
+
+Caveats: the cache is verified token-for-token against the real prompt and disables itself on any mismatch or on backends that cannot clone state (GPU-resident tensors on WebGPU — those run uncached). Decode speed (~11–15 tok/s here) is unchanged and is bounded by the hardware.

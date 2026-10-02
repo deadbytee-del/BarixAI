@@ -24,7 +24,7 @@ export class BarixAgent {
     this.outputTarget = this.env === "term" ? OUTPUT_TARGETS.term : OUTPUT_TARGETS.browser;
   }
 
-  async run(userText, { images = [], signal, onEvent = () => {}, sink } = {}) {
+  async run(userText, { images = [], signal, onEvent = () => {}, sink, reasoning: reasoningMode = this.reasoningMode } = {}) {
     const ev = (e) => onEvent({ ts: Date.now(), ...e });
     this._visualRounds = 0; this.lastVisual = null;
     const t0 = Date.now(); const usage = { promptTokens: 0, completionTokens: 0, calls: 0 }; const routes = []; let steps = 0, corrections = 0;
@@ -33,6 +33,7 @@ export class BarixAgent {
 
     // 1. understand ----------------------------------------------------------------------------
     const plan = understand(userText, { hasImages: images.length > 0, projectFiles, capabilities: this.capabilities, history: store.live() });
+    if (reasoningMode === "on" || reasoningMode === "off") { plan.reasoning = reasoningMode; plan.explain = plan.explain.replace(/reasoning (on|off)/, `reasoning ${reasoningMode} (set by you)`); }   // user override; "auto" keeps the planner's choice
     ev({ type: "plan", plan });
 
     // 2. persist request, memory side-effects, vision pre-pass ----------------------------------

@@ -25,9 +25,48 @@ export class TransformersProvider {
         this.tok = await tf.AutoTokenizer.from_pretrained(this.modelId, { progress_callback: this.progress });
         this.model = await tf.AutoModelForCausalLM.from_pretrained(this.modelId, { dtype: this.dtype, ...(this.device ? { device: this.device } : {}), progress_callback: this.progress });
       }
+      // Library quirk: generate() passes null `pixel_values` on text-only calls, which makes a resumed (cached) forward try to run the
+      // vision encoder. Dropping absent modality inputs is harmless for normal calls and required for prefix-cache reuse.
+      const fwd = this.model.forward.bind(this.model); this.model.forward = (inp) => { for (const k of ["pixel_values", "image_grid_thw", "pixel_values_videos", "video_grid_thw"]) if (inp && inp[k] == null) delete inp[k]; return fwd(inp); };
       this.loadMs = now() - t0; return this;
     })().catch((e) => { this._load = null; throw e; });
     return this._load;
+  }
+  /**
+   * Prefix state cache. On CPU, prefill costs ~11 ms per prompt token and an agent re-sends the same ~600-token system prompt plus the whole
+   * conversation on every step; only the final message (which carries the volatile context packet) really changes. We keep the model state
+   * (KV + this hybrid model's conv/recurrent state) for the STABLE prefix — everything before the last message — and hand each request a
+   * CLONE of it, so only new tokens are ever prefilled. A permanent system-prompt-only base makes a new conversation cheap too.
+   * Safety: the cached tokens must equal the first N tokens of the real prompt, token for token; anything else (template quirks, a
+   * boundary tokenised differently, a backend that cannot clone such as GPU-resident tensors) skips or disables the cache. Output is identical.
+   */
+  async #prefixCache(msgs, inputs, req) {
+    if (this._noPrefixCache) return null;
+    try {
+      if (msgs.length < 2 || msgs.at(-1).role !== "user" || msgs[0].role !== "system") return null;
+      const opts = { tokenize: false, add_generation_prompt: false, enable_thinking: req.reasoning === "on" }; const SENT = "\u00a7BARIX\u00a7";
+      const cut = (head) => { const probe = this.tok.apply_chat_template([...head, { role: "user", content: SENT }], opts); const at = probe.indexOf(SENT), st = at < 0 ? -1 : probe.lastIndexOf("<|im_start|>", at); return st < 0 ? null : probe.slice(0, st); };
+      const full = Array.from(inputs.input_ids.data, Number); const total = full.length;
+      const idsOf = (text) => Array.from(this.tok(text).input_ids.data, Number);
+      const sysEnd = msgs.findIndex((m) => m.role !== "system"); const sysText = cut(msgs.slice(0, sysEnd)); const stableText = cut(msgs.slice(0, -1));
+      if (!sysText || !stableText) return null;
+      const matches = (ids) => ids.length < total && ids.every((t, i) => t === full[i]);
+      const sysIds = idsOf(sysText); if (sysIds.length < 64 || !matches(sysIds)) return null;
+      const P = idsOf(stableText); const useStable = P.length > sysIds.length && matches(P);
+      const tensor = (ids) => ({ input_ids: new this.tf.Tensor("int64", BigInt64Array.from(ids, BigInt), [1, ids.length]), attention_mask: new this.tf.Tensor("int64", BigInt64Array.from(ids, () => 1n), [1, ids.length]) });
+      const extend = async (ids, from) => { const o = await this.model.generate({ ...tensor(ids), ...(from ? { past_key_values: cloneCache(from.cache) } : {}), max_new_tokens: 1, do_sample: false, return_dict_in_generate: true }); return { ids, cache: o.past_key_values }; };
+      const st = (k) => { this.stats = { ...(this.stats ?? {}), [k]: (this.stats?.[k] ?? 0) + 1 }; };
+      if (this._base?.text !== sysText) { const b = await extend(sysIds, null); this._base = { text: sysText, ...b }; this._chain = null; st("prefixBuilds"); }
+      let state = this._base;
+      if (useStable) {
+        const c = this._chain; const startsWith = (c) => c && c.ids.length <= P.length && c.ids.every((t, i) => t === P[i]);
+        let from = startsWith(c) ? c : this._base;
+        if (from.ids.length < P.length) { this._chain = await extend(P, from); st("prefixAdvances"); }
+        state = this._chain ?? from;
+      }
+      st("prefixHits"); this._lastCached = state.ids.length;
+      return cloneCache(state.cache);
+    } catch (e) { this._noPrefixCache = true; this._base = this._chain = null; this.prefixCacheError = String(e?.message ?? e).slice(0, 200); return null; }
   }
   /** Exact token counter backed by the model's real tokenizer (for calibration and billing-grade counts). */
   async exactCounter() { await this.load(); return (text) => this.tok(text).input_ids.size; }
@@ -68,8 +107,9 @@ export class TransformersProvider {
       });
       const onAbort = () => stopping.interrupt(); req.signal?.addEventListener("abort", onAbort, { once: true });
       const temp = req.temperature ?? 0;
-      const run = model.generate({ ...inputs, max_new_tokens: Math.min(req.maxTokens ?? 512, this.caps.maxOutput), do_sample: temp > 0, ...(temp > 0 ? { temperature: temp, top_p: req.topP ?? 0.95 } : {}), streamer, stopping_criteria: stopping, repetition_penalty: req.repetitionPenalty ?? 1.0 })
-        .then((out) => { for (const ev of splitter.flush()) if (ev.type === "token" && !stopped) { visible += ev.text; push(ev); } const completionTokens = out.dims[1] - promptTokens; push({ type: "usage", promptTokens, completionTokens }); push({ type: "done", finishReason: req.signal?.aborted ? "abort" : stopped ? "stop" : completionTokens >= (req.maxTokens ?? 512) - 1 ? "length" : "stop" }); })
+      const past = hasImages ? null : await this.#prefixCache(msgs, inputs, req);
+      const run = model.generate({ ...inputs, ...(past ? { past_key_values: past } : {}), max_new_tokens: Math.min(req.maxTokens ?? 512, this.caps.maxOutput), do_sample: temp > 0, ...(temp > 0 ? { temperature: temp, top_p: req.topP ?? 0.95 } : {}), streamer, stopping_criteria: stopping, repetition_penalty: req.repetitionPenalty ?? 1.0 })
+        .then((out) => { for (const ev of splitter.flush()) if (ev.type === "token" && !stopped) { visible += ev.text; push(ev); } const completionTokens = out.dims[1] - promptTokens; push({ type: "usage", cachedPrefixTokens: past ? this._lastCached : 0, promptTokens, completionTokens }); push({ type: "done", finishReason: req.signal?.aborted ? "abort" : stopped ? "stop" : completionTokens >= (req.maxTokens ?? 512) - 1 ? "length" : "stop" }); })
         .catch((e) => push({ type: "error", error: e }));
       for (;;) {
         while (q.length) { const e = q.shift(); if (e.type === "error") throw new BarixError("EPROVIDER", `inference failed: ${e.error?.message ?? e.error}`); yield e; if (e.type === "done") { await run; req.signal?.removeEventListener("abort", onAbort); return; } }
@@ -85,3 +125,5 @@ function dataUrlToBlob(url) { const m = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(u
 export async function nodeTransformers({ cacheDir } = {}) {
   const tf = await import("@huggingface/transformers"); if (cacheDir) tf.env.cacheDir = cacheDir; return tf;
 }
+
+function cloneCache(c) { const n = Object.create(Object.getPrototypeOf(c)); for (const [k, v] of Object.entries(c)) n[k] = v && typeof v.clone === "function" ? v.clone() : v; return n; }

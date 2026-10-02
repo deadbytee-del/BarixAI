@@ -11,7 +11,7 @@ test("models stored on the device are listed in Settings and can be deleted indi
     await page.click("#btn-settings"); await page.waitForSelector(".model-row");
     assert.equal(await page.locator(".model-row").count(), 2);
     assert.match(await page.locator(".models-list").innerText(), /Barix Lite[\s\S]*Barix Core/);
-    await page.screenshot({ path: process.env.BARIX_SHOT ? process.env.BARIX_SHOT + "-settings.png" : "/dev/null" });
+    if (process.env.BARIX_SHOT) await page.screenshot({ path: process.env.BARIX_SHOT + "-settings.png" });
     page.once("dialog", (d) => d.accept());
     await page.locator('button[aria-label="Delete Barix Lite (0.8B)"]').click(); await page.waitForFunction(() => document.querySelectorAll(".model-row").length === 1);
     const left = await page.evaluate(async () => (await (await caches.open("transformers-cache")).keys()).map((r) => r.url));

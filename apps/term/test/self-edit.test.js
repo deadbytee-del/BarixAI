@@ -72,3 +72,10 @@ test("refuses to start on a dirty tree, rejects hours beyond the cap, and never 
   await assert.rejects(make(d, async () => ({})).se.run(), /uncommitted changes/);
   assert.throws(() => make(d, async () => ({}), { hours: 1000 }), /hours must be/);
 });
+
+test("a commit that just passed the suite is not re-tested at the start of the next cycle", async () => {
+  const { d } = await repo(); let n = 0, runs = 0;
+  const { se } = make(d, async () => { await writeFile(join(d, "src/a.js"), `export const x = ${200 + ++n};\n`); return { answer: "n" }; }, { hours: 0.2, runTests: async () => { runs++; return { ok: true, output: "ok" }; } });
+  const r = await se.run(); assert.ok(r.commits >= 2);
+  assert.equal(runs, 1 + r.commits, "one baseline run total + one gate run per attempted change, not two per cycle");
+});

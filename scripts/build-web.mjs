@@ -39,6 +39,7 @@ for (const f of await readdir(ts)) if (f.endsWith(".wasm")) await cp(path.join(t
 const nm = path.join(root, "node_modules"); const ortDir = path.join(nm, "onnxruntime-web/dist"); const tfDist = path.join(nm, "@huggingface/transformers/dist");
 await mkdir(path.join(dist, "ort"), { recursive: true });
 await cp(path.join(ortDir, "ort-wasm-simd-threaded.asyncify.wasm"), path.join(dist, "ort/ort-wasm-simd-threaded.asyncify.wasm")); await cp(path.join(ortDir, "ort-wasm-simd-threaded.asyncify.mjs"), path.join(dist, "ort/ort-wasm-simd-threaded.asyncify.mjs"));
+await cp(path.join(ortDir, "ort-wasm-simd-threaded.jsep.wasm"), path.join(dist, "ort/ort-wasm-simd-threaded.jsep.wasm")); await cp(path.join(ortDir, "ort-wasm-simd-threaded.jsep.mjs"), path.join(dist, "ort/ort-wasm-simd-threaded.jsep.mjs"));
 await cp(path.join(nm, "esbuild-wasm/esbuild.wasm"), path.join(dist, "esbuild.wasm"));
 
 const sizes = {}; const walk = async (d, p = "") => { for (const e of await readdir(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) await walk(f, p + e.name + "/"); else sizes[p + e.name] = (await stat(f)).size; } }; await walk(dist);

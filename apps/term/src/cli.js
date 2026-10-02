@@ -9,6 +9,7 @@ import { execTools } from "./exec-tools.js";
 import { gitTools, Git } from "./git.js";
 import { Publisher } from "./publish.js";
 import { setupProviders, githubToken, systemInfo, detectLocalServers } from "./providers-setup.js";
+import * as UI from "./ui.js";
 
 const C = process.stdout.isTTY && !process.env.NO_COLOR ? { dim: "\x1b[2m", bold: "\x1b[1m", cyan: "\x1b[36m", green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m", off: "\x1b[0m" } : { dim: "", bold: "", cyan: "", green: "", red: "", yellow: "", off: "" };
 export const VERSION = "0.1.0";
@@ -20,7 +21,8 @@ Usage
   barixterm -p "prompt" [project-dir]        one-shot: run a single request and exit
   barixterm publish [project-dir] --repo owner/name [--create] [--private] [--pages] [--yes]
   barixterm doctor                           check Node, git, RAM, local model servers, GitHub auth
-  barixterm self [--hours 24] [--goal "text"] [--resume] [--yes]   self-edit mode: Barix works on its OWN repo for up to 24h
+  barixterm [project-dir] --reasoning on|off|auto   step-by-step thinking (slower, smarter when on); --auto-accept approves commands
+  barixterm self [--hours 24] [--goal "text"] [--resume] [--reasoning on] [--no-auto-accept] [--confirm]   self-edit mode: Barix works on its OWN repo for up to 24h
   barixterm worker [--port 8787]             share this machine's model as an opt-in Barix worker
 
 Options
@@ -34,7 +36,7 @@ GitHub token: set GITHUB_TOKEN (or sign in with \`gh auth login\`). It is never 
 `;
 
 export function parseArgs(argv) {
-  const o = { _: [], flags: {} }; const takes = new Set(["-p", "--print", "--repo", "--endpoint", "--endpoint-model", "--window", "--model", "--dtype", "--port", "--message", "--branch", "--allow-secret", "--expect", "--hours", "--goal", "--repo-dir"]);
+  const o = { _: [], flags: {} }; const takes = new Set(["-p", "--print", "--repo", "--endpoint", "--endpoint-model", "--window", "--model", "--dtype", "--port", "--message", "--branch", "--allow-secret", "--expect", "--hours", "--goal", "--repo-dir", "--reasoning"]);
   for (let i = 0; i < argv.length; i++) { const a = argv[i]; if (a.startsWith("-")) { const [k, v] = a.includes("=") ? a.split(/=(.*)/s) : [a, null]; if (takes.has(k)) o.flags[k.replace(/^-+/, "")] = v ?? argv[++i]; else o.flags[k.replace(/^-+/, "")] = true; } else o._.push(a); }
   return o;
 }
@@ -55,40 +57,63 @@ export async function main(argv = process.argv.slice(2), { stdin = process.stdin
   const token = await githubToken(); const github = new GitHubClient({ token });
   const rl = stdin.isTTY || !f.p ? readline.createInterface({ input: stdin, output: stdout, terminal: !!stdin.isTTY }) : null;
   const ask = (q) => new Promise((res) => (rl ? rl.question(q, res) : res("n")));
-  const confirm = async (q) => { if (f.yes) return true; const a = await ask(`${C.yellow}? ${q} [y/N] ${C.off}`); return /^y(es)?$/i.test(a.trim()); };
+  const state = { auto: !!(f.yes || f.auto || f["auto-accept"]), reasoning: ["on", "off"].includes(f.reasoning) ? f.reasoning : "auto" }; const spin = new UI.Spinner(stdout);
+  const confirm = async (q) => { if (state.auto) return true; spin.stop(); const a = await ask(`${C.yellow}? ${q} [y/N] ${C.off}`); return /^y(es)?$/i.test(a.trim()); };
   const log = (s) => out(`${C.dim}${s}${C.off}`);
 
-  log(`BarixTerm ${VERSION} · project ${dir}`);
+  if (stdout.isTTY && !f.p) out(UI.banner(VERSION)); else log(`BarixTerm ${VERSION} · project ${dir}`);
   const providers = await setupProviders({ endpoint: f.endpoint, endpointModel: f["endpoint-model"], window: f.window ? +f.window : undefined, model: f.model, dtype: f.dtype, cacheDir: path.join(os.homedir(), ".barix", "models"), onProgress: progressBar(stdout) }, log);
   const caps = { exec: !f["no-exec"], git: !f["no-exec"], github: true };
   const b = await createBarix({ backend: await NodeBackend.create(dir), runtime: await nodeTreeSitter(), providers, tools: [...execTools, ...gitTools, ...githubTools], capabilities: caps, env: "term", projectId: path.basename(dir), extraCtx: { root: dir, github, confirm, identity: undefined } });
   if (providers[0]?.exactCounter) b.counter.exact = await providers[0].exactCounter().catch(() => null);
-  const prof = await b.intel.getProfile(); log(`indexed ${b.fs.files().length} files · ${b.intel.health().symbols} symbols · ${prof.primaryLanguage ?? "empty project"}`);
+  b.setReasoning(state.reasoning);
+  const prof = await b.intel.getProfile();
+  const modelDesc = () => b.router.status().map((p) => `${p.model} ${UI.paint(UI.S.mute, `[${p.kind}, window ${UI.fmt(p.window)}]`)}`).join(", ") || "none";
+  const headerBox = () => UI.header({ dir, models: modelDesc(), ctx: `up to ${UI.fmt(b.store.maxTotalTokens)} tokens retrievable`, reasoning: b.reasoning, mode: state.auto ? UI.paint(UI.S.warn, "auto-accept ON") + UI.paint(UI.S.mute, " (dangerous commands stay blocked)") : "asks before unfamiliar commands", files: b.fs.files().length, symbols: b.intel.health().symbols, lang: prof.primaryLanguage });
+  if (stdout.isTTY && !f.p) out(headerBox()); else log(`indexed ${b.fs.files().length} files · ${b.intel.health().symbols} symbols · ${prof.primaryLanguage ?? "empty project"}`);
 
   if (cmd === "publish") return publishCommand({ b, dir, github, f, confirm, out });
   const run = async (text) => {
-    process.stdout.write(`\n${C.cyan}barix${C.off} › `); let started = false;
-    const r = await b.ask(text, { onEvent: (e) => render(e, stdout), sink: undefined }).catch((e) => ({ error: e }));
-    if (r.error) { out(`\n${C.red}✗ ${r.error.code ?? "error"}: ${r.error.message}${C.off}`); return; }
+    const tty = !!stdout.isTTY; const ans = new UI.AnswerStream(stdout); let streamed = false; if (!tty) stdout.write(`\n${C.cyan}barix${C.off} › `);
+    spin.start("thinking"); const onEvent = (e) => {
+      if (!tty) return render(e, stdout);
+      switch (e.type) {
+        case "plan": spin.stop(); out(UI.noteLine("info", e.plan.explain)); spin.start("thinking"); break;
+        case "token": if (!streamed) { spin.stop(); out(""); streamed = true; } ans.write(e.text); break;
+        case "tool-start": spin.stop(); ans.end(); streamed = false; spin.start(`running ${e.tool}`); break;
+        case "tool": spin.stop(); ans.end(); streamed = false; out(UI.toolLine(e)); spin.start("thinking"); break;
+        case "gate": spin.stop(); out(UI.noteLine("info", `verifying: ${e.action}`)); spin.start("verifying"); break;
+        case "failover": spin.stop(); out(UI.noteLine("warn", `${e.from} failed (${e.reason}); switching provider`)); spin.start("thinking"); break;
+        case "memory": spin.stop(); out(UI.noteLine("info", `remembered: ${e.stored}`)); spin.start("thinking"); break;
+        case "continuing": spin.set("continuing (output exceeded one call)"); break;
+        case "thinking": spin.set("reasoning"); break;
+        case "route": spin.set(`thinking · ${e.provider}`); break;
+      }
+    };
+    const r = await b.ask(text, { onEvent, sink: undefined }).catch((e) => ({ error: e })); spin.stop(); ans.end();
+    if (r.error) { out(`\n${tty ? UI.paint(UI.S.bad, "✗ " + (r.error.code ?? "error") + ": " + r.error.message) : `${C.red}✗ ${r.error.code ?? "error"}: ${r.error.message}${C.off}`}`); return; }
+    if (tty) { if (!streamed && r.answer) { const a2 = new UI.AnswerStream(stdout); out(""); a2.write(r.answer + "\n"); a2.end(); } const extra = r.text !== r.answer ? r.text.slice(r.answer.length).trim() : ""; if (extra) { const a3 = new UI.AnswerStream(stdout); a3.write(extra + "\n"); a3.end(); } out(UI.footer(r, { changed: r.changedFiles })); return; }
     if (r.text !== r.answer) out(`\n${C.dim}${r.text.slice(r.answer.length).trim()}${C.off}`); else out("");
     out(`${C.dim}[${r.steps} step(s) · ${r.usage.promptTokens}+${r.usage.completionTokens} tokens · ${(r.ms / 1000).toFixed(1)}s · ${r.routes.join(",")}${r.changedFiles.length ? ` · changed: ${r.changedFiles.join(", ")}` : ""}]${C.off}`);
   };
   if (f.p) { await run(f.p); rl?.close(); return; }
 
-  out(`${C.dim}Type a request. /help for commands. Barix will ask before running unfamiliar commands.${C.off}`);
+  out(UI.hint(stdout.isTTY ? "Type a request — /help for commands, /reasoning on|off, /auto on|off, Ctrl-C to quit." : "Type a request. /help for commands."));
   for (;;) {
-    const line = (await ask(`\n${C.green}you${C.off} › `)).trim(); if (!line) continue;
-    if (line.startsWith("/")) { if (await slash(line, { b, out, dir, providers })) break; continue; }
+    const line = (await ask(stdout.isTTY ? UI.prompt() : `\n${C.green}you${C.off} › `)).trim(); if (!line) continue;
+    if (line.startsWith("/")) { if (await slash(line, { b, out, dir, providers, state })) break; continue; }
     await run(line);
   }
   rl?.close();
 }
 
-async function slash(line, { b, out, dir }) {
+async function slash(line, { b, out, dir, state }) {
   const [c, ...rest] = line.slice(1).split(/\s+/);
   switch (c) {
     case "exit": case "quit": return true;
-    case "help": out(HELP); break;
+    case "help": out(process.stdout.isTTY ? UI.helpText() : HELP); break;
+    case "reasoning": { const v = (rest[0] ?? "").toLowerCase(); if (!["on", "off", "auto"].includes(v)) { out(`reasoning is ${b.reasoning}. Use /reasoning on|off|auto`); break; } b.setReasoning(v); state.reasoning = v; out(`reasoning ${v}${v === "on" ? " — slower, but Barix thinks step by step before answering" : v === "off" ? " — fastest" : " — Barix thinks only on hard problems"}`); break; }
+    case "auto": { const v = (rest[0] ?? "").toLowerCase(); if (!["on", "off"].includes(v)) { out(`auto-accept is ${state.auto ? "on" : "off"}. Use /auto on|off`); break; } state.auto = v === "on"; out(state.auto ? "auto-accept ON: commands and commits run without asking (dangerous commands are still blocked)" : "auto-accept off: Barix will ask before unfamiliar commands"); break; }
     case "status": { const s = b.store.stats(), h = b.intel.health(); out(`context: ${s.retrievable} tokens retrievable (cap ${b.store.maxTotalTokens}), ${s.live} live, ${s.summaries} summaries · index: ${h.files} files, ${h.symbols} symbols, ${h.chunks} chunks · prefix reuse ${(b.engine.history.reusedPrefixTokens / Math.max(1, b.engine.history.totalPromptTokens) * 100).toFixed(0)}% · output budget ${OUTPUT_TARGETS.term} tokens/message`); break; }
     case "providers": for (const p of b.router.status()) out(`${p.circuitOpen ? "✗" : "●"} ${p.id} [${p.kind}] ${p.model} window ${p.window} ${p.tps ? p.tps + " tok/s" : ""} served ${p.served} month ${p.monthTokens} tokens`); out(JSON.stringify(b.router.capacity())); break;
     case "memory": out(["long-term:", ...b.memory.list("long-term").map((m) => `  ${m.id} ${m.text}`), "project:", ...b.memory.list("project").map((m) => `  ${m.id} ${m.text}`), b.memory.renderTask() ? "task:\n" + b.memory.renderTask() : ""].join("\n")); break;

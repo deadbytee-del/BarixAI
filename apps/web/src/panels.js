@@ -133,15 +133,17 @@ function shareDialog() {
 export function openSettings() {
   const gh = h("input", { type: "password", placeholder: "GitHub token (fine-grained, read-only is enough for private repos)", value: S.githubToken ?? "" }); const remember = h("input", { type: "checkbox", checked: store.get("barix.ghRemember", false) });
   const local = h("input", { type: "checkbox", checked: store.get("barix.localModel", true) });
+  const reasoning = h("select", {}, [["auto", "Auto — think only on hard problems (fastest)"], ["on", "On — always think before answering (slower, smarter)"], ["off", "Off — never think (fastest)"]].map(([v, t]) => h("option", { value: v, text: t, selected: store.get("barix.reasoning", "auto") === v })));
   const model = h("select", {}, MODELS.map((m) => h("option", { value: m.id, text: `${m.name} — ~${(m[S.hw.webgpu && S.hw.f16 ? "webgpu" : "wasm"] ?? m.wasm).mb} MB`, selected: modelConfig().model === m.id })));
   dialog("Settings", h("div", {},
     h("div", { class: "field" }, h("label", { text: "Foundation model on this device" }), model, h("label", { class: "note" }, local, " run a model locally in this browser")),
+    h("div", { class: "field" }, h("label", { text: "Reasoning" }), reasoning),
     h("div", { class: "field" }, h("label", { text: "GitHub token (for private repositories)" }), gh, h("label", { class: "note" }, remember, " remember on this device (stored unencrypted in this browser — leave off on shared computers)")),
     modelsCard(),
     h("p", { class: "note", text: `Targets: browser chat output up to 1,650,000 tokens/message and browser-coding context up to 1,250,000 tokens — budgets, bounded by the model's real window (${fmtTok(modelConfig().window)} here); Barix continues and retrieves to bridge the gap.` }),
     h("div", { class: "actions", style: "justify-content:flex-start;flex-wrap:wrap" }, h("button", { class: "secondary", onclick: async () => { if (!confirm("Delete ALL Barix projects and data stored in this browser?")) return; const root = await navigator.storage.getDirectory(); for await (const [n] of root.entries()) await root.removeEntry(n, { recursive: true }); localStorage.clear(); sessionStorage.clear(); location.reload(); } }, "Erase all local data"))),
     { actions: [{ label: "Cancel" }, { label: "Save", primary: true, run: async () => {
-      store.set("barix.localModel", local.checked); store.set("barix.ghRemember", remember.checked);
+      store.set("barix.localModel", local.checked); store.set("barix.reasoning", reasoning.value); store.set("barix.ghRemember", remember.checked);
       S.githubToken = gh.value; sessionStorage.setItem("barix.gh", gh.value); if (remember.checked) store.set("barix.gh", gh.value); else localStorage.removeItem("barix.gh"); await S.brain.call("github.token", { token: gh.value });
       const changed = model.value !== modelConfig().model; if (changed) { const m = MODELS.find((x) => x.id === model.value); S.chosen = { id: m.id, device: S.hw.webgpu && S.hw.f16 ? "webgpu" : "wasm" }; store.set("barix.model", S.chosen); await openProject(S.project); } toast("Saved"); } }] });
 }

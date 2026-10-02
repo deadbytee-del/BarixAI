@@ -43,12 +43,12 @@ const handlers = {
     return { files: B.fs.files(), health: B.intel.health() };
   },
 
-  async ask({ id: askId, text, images = [] }, { emit }) {
+  async ask({ id: askId, text, images = [], reasoning = "auto" }, { emit }) {
     if (!B) throw new Error("project not initialised");
     const id = askId ?? ++askSeq; abort = new AbortController();
     const imgs = images.map((i) => ({ bytes: new Uint8Array(i.bytes), name: i.name }));
     try {
-      const r = await B.agent.run(text, { images: imgs, signal: abort.signal, onEvent: (e) => emit("agent", { id, ...slim(e) }) });
+      const r = await B.agent.run(text, { reasoning, images: imgs, signal: abort.signal, onEvent: (e) => emit("agent", { id, ...slim(e) }) });
       return { id, text: r.text, answer: r.answer, ok: r.ok, plan: r.plan, steps: r.steps, usage: r.usage, routes: r.routes, changedFiles: r.changedFiles, ms: r.ms, verification: { ok: r.verification.ok, verified: r.verification.verified.length, unverified: r.verification.unverified.map((c) => ({ type: c.type, path: c.path, reason: c.reason })), contradicted: r.verification.contradicted.map((c) => ({ type: c.type, path: c.path, reason: c.reason })) } };
     } catch (e) { if (e.name === "AbortError") return { id, aborted: true }; throw e; } finally { abort = null; }
   },

@@ -43,5 +43,5 @@ export async function createBarix({ backend = new MemoryBackend(), runtime = nul
   await intel.indexAll();
   const profile = await intel.getProfile(); if (fs.files().length) await memory.setProjectProfile(profile, { importantFiles: await intel.importantFiles() });
   return { fs, intel, store, memory, engine, compactor, ledger, registry, executor, router, agent, counter, usage, ctx, vision: pipeline,
-    ask: (text, opts) => agent.run(text, opts) };
+    ask: (text, opts) => agent.run(text, opts), setReasoning: (m) => { agent.reasoningMode = ["on", "off"].includes(m) ? m : "auto"; }, get reasoning() { return agent.reasoningMode ?? "auto"; } };
 }

@@ -49,9 +49,9 @@ export class SelfEdit {
    * @param {{get:Function}|null} [o.github]  GitHubClient (for the draft PR); null → local commits only
    * @param {number} [o.hours]  how long to run (default 24)
    */
-  constructor({ repoDir, git, agent, github = null, hours = DEFAULT_HOURS, goals = [], now = () => Date.now(), sleep = sleepReal, log = () => {}, runTests, limits = {}, resume = false, repoSlug = null }) {
+  constructor({ repoDir, git, agent, github = null, hours = DEFAULT_HOURS, goals = [], now = () => Date.now(), sleep = sleepReal, log = () => {}, runTests, limits = {}, resume = false, repoSlug = null, onEvent = null }) {
     if (!(hours > 0) || hours > MAX_HOURS) throw new Error(`hours must be between 0 and ${MAX_HOURS}`);
-    Object.assign(this, { repoDir, git, agent, github, hours, goals, now, sleep, log, resume, repoSlug, limits: { ...LIMITS, ...limits }, stopRequested: false });
+    Object.assign(this, { onEvent, repoDir, git, agent, github, hours, goals, now, sleep, log, resume, repoSlug, limits: { ...LIMITS, ...limits }, stopRequested: false });
     this.dir = path.join(repoDir, ".barix", "self"); this.stateFile = path.join(this.dir, "state.json"); this.stopFile = path.join(this.dir, "STOP");
     this.runTests = runTests ?? (() => defaultTests(repoDir, this.limits.testMinutes));
     this.state = null;
@@ -60,7 +60,7 @@ export class SelfEdit {
   requestStop() { this.stopRequested = true; }
   async #stopFileExists() { try { await stat(this.stopFile); return true; } catch { return false; } }
   async #save() { await writeFile(this.stateFile, JSON.stringify(this.state, null, 1)); }
-  async #event(type, data = {}) { const e = { t: iso(this.now()), type, ...data }; this.log(`[self-edit] ${type}${data.msg ? ": " + data.msg : ""}`); await appendFile(path.join(this.dir, "log.jsonl"), JSON.stringify(e) + "\n").catch(() => {}); }
+  async #event(type, data = {}) { const e = { t: iso(this.now()), type, ...data }; if (this.onEvent) this.onEvent(e); else this.log(`[self-edit] ${type}${data.msg ? ": " + data.msg : ""}`); await appendFile(path.join(this.dir, "log.jsonl"), JSON.stringify(e) + "\n").catch(() => {}); }
 
   async #prepare() {
     await mkdir(this.dir, { recursive: true });
@@ -98,7 +98,10 @@ export class SelfEdit {
   // ---------------------------------------------------------------- one cycle
   async #cycle() {
     const s = this.state; s.cycle++; const t0 = this.now();
-    const baseline = await this.runTests(); await this.#event("baseline", { ok: baseline.ok, msg: baseline.ok ? "tests pass" : "tests FAIL" });
+    // The suite already passed on this exact commit (we only ever commit after a green run, and rollbacks restore HEAD): don't pay for it twice.
+    const head = await this.git.headSha(); const known = s.goodSha && s.goodSha === head;
+    const baseline = known ? { ok: true, output: "" } : await this.runTests(); if (baseline.ok) s.goodSha = head;
+    await this.#event("baseline", { ok: baseline.ok, msg: known ? "tests known green for this commit (skipped)" : baseline.ok ? "tests pass" : "tests FAIL" });
     const task = await this.#pickTask(baseline);
     if (!task) { await this.#event("idle", { msg: "no task available" }); return "idle"; }
     s.attempted[task.id] = (s.attempted[task.id] ?? 0) + 1; await this.#event("task", { id: task.id, msg: task.text.split("\n")[0].slice(0, 160) });
@@ -121,7 +124,7 @@ export class SelfEdit {
     if (!after.ok) { await this.#rollback(); return this.#fail(task, `tests failed after the change: ${after.output.slice(-400).replace(/\s+/g, " ")}`); }
     const summary = String(res?.answer ?? res?.text ?? task.text).replace(/\s+/g, " ").trim().slice(0, 140);
     await this.git.commit(`self-edit: ${summary}\n\nTask: ${task.id}\nFiles: ${staged.length}, changed lines: ${lines}\nTests: passed (full suite) before this commit.\n\nCo-Authored-By: Barix <barix@users.noreply.github.com>`, { name: "Barix", email: "barix@users.noreply.github.com" });
-    s.commits++; s.unpushed++; s.consecutiveFailures = 0; await this.#event("commit", { id: task.id, files: staged.length, lines, msg: summary, ms: this.now() - t0 });
+    s.goodSha = await this.git.headSha(); s.commits++; s.unpushed++; s.consecutiveFailures = 0; await this.#event("commit", { id: task.id, files: staged.length, lines, msg: summary, ms: this.now() - t0 });
     return "committed";
   }
   async #fail(task, reason, { soft = false } = {}) {

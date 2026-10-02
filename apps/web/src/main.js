@@ -66,7 +66,7 @@ function onInfer(e) {
   if (m.type === "ready") S.onReady?.();
   else if (m.type === "progress") { S.onProgress?.(m.p); }
   else if (m.type === "loaded") { S.modelReady = true; S.loading = false; store.set("barix.modelCached." + modelConfig().model, true); chips(); S.onLoaded?.(m); }
-  else if (m.type === "fallback") toast("WebGPU could not start on this device; using CPU instead (slower).", "warn");
+  else if (m.type === "fallback") { toast("WebGPU could not start on this device; switching to CPU (slower).", "warn"); S.loading = false; S.chosen = { id: modelConfig().model, device: "wasm" }; store.set("barix.model", S.chosen); const pending = S.onLoaded; S.progressCard?.remove(); openProject(S.project).then(() => loadModel({ silent: true })).then((r) => pending?.(r ?? {}), (e) => pending?.({ error: e.message })); }
   else if (m.type === "error") { S.loading = false; toast("Model error: " + m.message, "bad"); console.error(m); S.onLoaded?.({ error: m.message }); chips(); }
 }
 export function loadModel({ silent = false } = {}) {
@@ -130,7 +130,7 @@ async function send(text) {
   const a = newAssistant(); S.stream = a;
   try {
     a.askId = S.nextAsk = (S.nextAsk ?? 0) + 1;
-    const r = S.lastResult = await S.brain.call("ask", { id: a.askId, text, images: images.map((i) => ({ bytes: i.bytes.slice(0), name: i.name })) }); a.status.remove(); if (a.raf) cancelAnimationFrame(a.raf);
+    const r = S.lastResult = await S.brain.call("ask", { id: a.askId, text, reasoning: store.get("barix.reasoning", "auto"), images: images.map((i) => ({ bytes: i.bytes.slice(0), name: i.name })) }); a.status.remove(); if (a.raf) cancelAnimationFrame(a.raf);
     if (r.aborted) { a.body.append(h("p", { class: "note", text: "Stopped." })); return; }
     // final: keep tool steps, replace streamed prose with the clean final answer
     a.body.replaceChildren(h("div", { html: renderMarkdown(r.answer) })); const vb = verifyBox(r); if (vb) a.root.querySelector(".bubble").append(vb);
