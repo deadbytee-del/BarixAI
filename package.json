@@ -9,7 +9,7 @@
     "apps/*"
   ],
   "scripts": {
-    "test": "node --test packages/core/test apps/term/test",
+    "test": "node --test packages/core/test/*.test.js apps/term/test/*.test.js",
     "build:web": "node scripts/build-web.mjs",
     "bench": "node scripts/bench.mjs"
   },
@@ -18,5 +18,9 @@
   },
   "devDependencies": {
     "@huggingface/transformers": "^4.3.0"
+  },
+  "dependencies": {
+    "@vscode/tree-sitter-wasm": "^0.3.1",
+    "web-tree-sitter": "^0.27.0"
   }
 }
