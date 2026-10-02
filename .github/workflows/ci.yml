@@ -8,6 +8,8 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: 0   # install and use Chromium from the same place
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,4 +23,3 @@ jobs:
         run: npx playwright-core install --with-deps chromium
       - name: Real-browser tests (subpath serving, OPFS, WebRTC, sandbox, vision)
         run: npm run test:browser
-        env: { PLAYWRIGHT_BROWSERS_PATH: 0 }
