@@ -3,14 +3,21 @@
 import { serve } from "./rpc.js";
 import {
   createBarix, OPFSBackend, MemoryBackend, browserTreeSitter, browserCodec, RemoteWorker, messagePortTransport, GitHubClient, githubTools,
-  OpenAICompatProvider, WorkerPool, connectWebSocket, isBinary, detectSecrets, HashEmbedder,
+  OpenAICompatProvider, WorkerPool, connectWebSocket, isBinary, detectSecrets, HashEmbedder, webTools,
 } from "@barix/core";
+import { bridgeWeb, fallbackWeb } from "./web-access.js";
 import { browserTools } from "./browser-tools.js";
 import { buildPreviewDoc } from "./preview-doc.js";
 import { hasBrowserTests } from "./browser-tools.js";
 
-let B = null, base = "./", abort = null, askSeq = 0, github = null, pool = null, inferPort = null;
+let ghToken = "", webImpl = fallbackWeb(), B = null, base = "./", abort = null, askSeq = 0, github = null, pool = null, inferPort = null;
 const pendingCaps = new Map();
+// Route GitHub + web access through the local Barix Bridge (or back to the direct/limited browser path). Mutates the live client so no restart is needed.
+function applyBridge(b) {
+  if (b?.url && b?.token) { const base = b.url.replace(/\/$/, ""); Object.assign(github, { apiBase: base + "/gh", rawBase: base + "/ghraw", token: () => b.token }); webImpl = bridgeWeb(b); }
+  else { Object.assign(github, { apiBase: "https://api.github.com", rawBase: "https://raw.githubusercontent.com", token: () => ghToken || undefined }); webImpl = fallbackWeb(); }
+  github.cache?.clear?.(); if (B) B.ctx.web = webImpl; return { web: webImpl.kind };
+}
 let emitRef = () => {};
 
 async function makeRuntime() {
@@ -24,18 +31,18 @@ async function backendFor(project) {
 const provenance = (b) => b ? { files: b.fs.files().length, rev: b.fs.rev } : null;
 
 const handlers = {
-  async init({ project, inferPort: port, base: b, githubToken, endpoints = [] }, { emit }) {
+  async init({ project, inferPort: port, base: b, githubToken, endpoints = [], bridge = null }, { emit }) {
     emitRef = emit; base = b; B?.intel.dispose();
-    github = new GitHubClient({ token: () => githubToken || undefined });
+    ghToken = githubToken; github = new GitHubClient({ token: () => githubToken || undefined }); if (bridge) applyBridge(bridge);
     const providers = [];
     if (port) { inferPort = port; const w = await new RemoteWorker(messagePortTransport(port), { name: "barix-brain", timeoutMs: 20000 }).connect(); providers.push(w.provider({ kind: "browser-local", id: "browser-local" })); }
     for (const e of endpoints) providers.push(new OpenAICompatProvider({ baseUrl: e.baseUrl, model: e.model, apiKey: e.apiKey, window: e.window, vision: !!e.vision, kind: e.local ? "local-machine" : "public-inference", quality: e.quality ?? 0.6, id: e.id }));
     B = await createBarix({
-      backend: await backendFor(project), runtime: await makeRuntime(), providers, tools: [...githubTools, ...browserTools], capabilities: { github: true, exec: true }, env: "browser", projectId: project.id,
+      backend: await backendFor(project), runtime: await makeRuntime(), providers, tools: [...githubTools, ...webTools, ...browserTools], capabilities: { github: true, exec: true, web: true }, env: "browser", projectId: project.id,
       runners: { test: async () => hasBrowserTests(B.fs), build: async () => !["src/main.tsx", "src/main.ts", "src/main.jsx", "src/main.js", "src/index.ts", "src/index.js", "index.js", "main.js"].every((p) => !B.fs.exists(p)) },
       codec: browserCodec(), embedder: new HashEmbedder(),
       browser: { screenshot: async ({ target, width, height }) => screenshot(target, width, height) },
-      extraCtx: { github, base, sandbox: { run: (o) => sandboxRun(o) } },
+      extraCtx: { github, base, web: webImpl, sandbox: { run: (o) => sandboxRun(o) } },
     });
     pool = new WorkerPool(B.router);
     B.fs.on("change", (e) => emit("fs", e));
@@ -84,7 +91,8 @@ const handlers = {
   "usage.summary": () => B.usage.summary(),
 
   // ---- providers / peers ----
-  "github.token": ({ token }) => { github.token = () => token || undefined; return { authenticated: !!token }; },
+  "github.token": ({ token }) => { ghToken = token; if (webImpl.kind !== "bridge") github.token = () => token || undefined; return { authenticated: !!token }; },
+  "bridge.set": (b) => applyBridge(b),
   async "github.import"({ repo, ref, path }) { const { parseGitHubUrl } = await import("@barix/core"); const p = parseGitHubUrl(repo); if (!p) throw new Error("not a GitHub repository URL"); const r = await github.importRepo(B.fs, { owner: p.owner, repo: p.repo, ref: ref ?? p.ref, path: path ?? p.path, prefix: "" }); await B.intel.indexAll(); return r; },
   async "provider.addEndpoint"(e) { const p = new OpenAICompatProvider({ baseUrl: e.baseUrl, model: e.model, apiKey: e.apiKey, window: e.window, vision: !!e.vision, kind: e.local ? "local-machine" : "public-inference", quality: e.quality ?? 0.6, id: e.id }); B.router.register(p, e.limits ? { limits: e.limits } : undefined); return B.router.status(); },
   "provider.remove": ({ id }) => { B.router.unregister(id); return B.router.status(); },

@@ -15,6 +15,8 @@ const PUBLISH = /\b(publish|deploy|push (?:it |this |the project )?to github|git
 const VISION = /\b(screenshot|mock-?up|image|picture|photo|diagram|chart|figure|this (?:design|ui|page|screen)|looks? like|pixel|wireframe)\b/i;
 const CONCISE = /\b(brief(?:ly)?|short(?:ly)?|tl;?dr|one[- ]liner|one line|quick(?:ly)?|concise|just (?:the|tell)|in a sentence|keep it short)\b/i;
 const DETAILED = /\b(detail(?:ed|s)?|in[- ]depth|thorough(?:ly)?|step[- ]by[- ]step|comprehensive|exhaustive|full(?:y)? explain|elaborate|deep dive|walk me through)\b/i;
+const WEB = /\b(search (?:the )?(?:web|internet|online|google)|google|look up|lookup|find (?:online|on the web)|on the (?:web|internet)|online|latest (?:version|release|news)|news|stack ?overflow|documentation|docs)\b/i;
+const MYREPOS = /\b(my (?:github )?(?:repos|repositories|projects|github)|list (?:my )?repos)\b/i;
 const EXTERNAL = /\b(latest|current|today'?s|news|search the web|look up|documentation for|docs for|release notes|changelog)\b/i;
 const LONGFORM = /\b(?:write|generate|produce|give me)\b[^.\n]{0,40}\b(\d[\d,]*)\s*(words?|lines?|pages?|tokens?|chapters?)\b/i;
 
@@ -37,7 +39,8 @@ export function understand(text, { hasImages = false, projectFiles = 0, capabili
   if (isCoding || (projectFiles && files.length)) { groups.add("core"); groups.add("code"); }
   if (["coding", "debug", "refactor", "vision-coding"].includes(intent)) groups.add("versions");
   if (has(EXEC, t) || ["coding", "debug", "refactor", "vision-coding", "publish"].includes(intent)) groups.add("exec");
-  if (gh || intent === "github" || intent === "publish") { groups.add("github"); if (intent === "publish" || has(/\b(commit|push|branch|status|diff)\b/i, t)) groups.add("git"); }
+  const web = (urls.some((u) => !/github\.com/.test(u)) || has(WEB, t)) && capabilities.web; if (web) groups.add("web");
+  if (gh || intent === "github" || intent === "publish" || has(MYREPOS, t)) { groups.add("github"); if (intent === "publish" || has(/\b(commit|push|branch|status|diff)\b/i, t)) groups.add("git"); }
   if (hasImages || intent.startsWith("vision")) groups.add("vision");
   if (has(/\b(remember|from now on|always use|forget)\b/i, t)) groups.add("memory");
   if (has(/\b(preview|render|open it|in the browser|run it)\b/i, t) || intent === "vision-coding") groups.add("browser");

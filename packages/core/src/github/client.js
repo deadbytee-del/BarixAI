@@ -41,7 +41,7 @@ export class GitHubClient {
   async #req(path, { method = "GET", body, accept = "application/vnd.github+json", base = this.apiBase, noCache = false } = {}) {
     if (this.limit.remaining === 0 && this.limit.reset && this.limit.reset * 1000 > Date.now()) throw new BarixError("ERATELIMIT", `GitHub API rate limit exhausted; resets at ${new Date(this.limit.reset * 1000).toISOString()}`, { retryAfter: Math.ceil(this.limit.reset - Date.now() / 1000) });
     const url = path.startsWith("http") ? path : base + path; const tok = this.#token();
-    const headers = { accept, "x-github-api-version": "2022-11-28", ...(tok && url.startsWith(this.apiBase) ? { authorization: `Bearer ${tok}` } : {}) };
+    const headers = { accept, "x-github-api-version": "2022-11-28", ...(tok && (url.startsWith(this.apiBase) || (this.apiBase !== "https://api.github.com" && url.startsWith(this.rawBase))) ? { authorization: `Bearer ${tok}` } : {}) };
     const cached = method === "GET" && !noCache ? this.cache.get(url + "|" + (tok ? "a" : "n")) : null; if (cached?.etag) headers["if-none-match"] = cached.etag;
     this.stats.requests++; let res;
     try { res = await this._fetch(url, { method, headers: { ...headers, ...(body ? { "content-type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) }); }

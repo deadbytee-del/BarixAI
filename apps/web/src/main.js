@@ -15,6 +15,8 @@ window.__barix = S; // debugging / test hook (read-only use)
 
 const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage blocked */ } } };
 export { store };
+// Barix Bridge (local Node helper): address in localStorage; pairing code per tab unless the user opts to remember it
+export function bridgeConfig() { const url = store.get("barix.bridge.url", ""); let token = ""; try { token = sessionStorage.getItem("barix.bridge.token") || (store.get("barix.bridge.remember", false) ? store.get("barix.bridge.token", "") : ""); } catch { /* blocked */ } return url && token ? { url, token } : null; }
 
 // ------------------------------------------------------------------ boot
 async function ensureIsolation() {
@@ -36,7 +38,7 @@ async function boot() {
 }
 
 export async function openProject(project, { handle } = {}) {
-  S.brain?.t.terminate?.(); S.infer?.terminate?.(); S.modelReady = false; S.project = project; store.set("barix.project", project.id);
+  S.brain?.t.terminate?.(); S.infer?.terminate?.(); S.modelReady = false; S.bridgeLlmId = null; S.project = project; store.set("barix.project", project.id);
   $("#messages").replaceChildren(); showWelcome();
   const brainW = new Worker(`${BASE}assets/brain.worker.js?v=${BUILD}`, { type: "module", name: "barix-brain" }); S.brain = new RpcClient(brainW); brainW.onerror = (e) => toast("Brain worker error: " + (e.message ?? "see console"), "bad");
   S.brain.on("agent", onAgent); S.brain.on("fs", () => P.refreshTreeSoon()); S.brain.on("cap:screenshot", onShot); S.brain.on("cap:run", onRun); S.brain.on("import-progress", (p) => toast(`Importing… ${p.done}/${p.total}`));
@@ -48,8 +50,8 @@ export async function openProject(project, { handle } = {}) {
     S.infer.postMessage({ type: "init", config: cfg, base: BASE, port: ch.port1 }, [ch.port1]);
     await new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("model worker did not start")), 20000); S.onReady = () => { clearTimeout(t); res(); }; }).catch((e) => toast(e.message, "bad"));
   }
-  const init = await S.brain.call("init", { project: { id: project.id, kind: project.kind ?? "opfs", handle }, inferPort: port, base: BASE, githubToken: S.githubToken, endpoints: S.endpoints }, transfer).catch((e) => { toast("Could not start Barix: " + e.message, "bad"); return null; });
-  if (init) { await P.refreshTree(); await refreshStatus(); }
+  const init = await S.brain.call("init", { project: { id: project.id, kind: project.kind ?? "opfs", handle }, inferPort: port, base: BASE, githubToken: S.githubToken, endpoints: S.endpoints, bridge: bridgeConfig() }, transfer).catch((e) => { toast("Could not start Barix: " + e.message, "bad"); return null; });
+  if (init) { await P.refreshTree(); await refreshStatus(); P.checkBridge().then(() => chips()); }
   if (useLocal && store.get("barix.modelCached." + modelConfig().model, false)) loadModel({ silent: true });
   chips();
 }
@@ -164,6 +166,7 @@ export function chips() {
   if (store.get("barix.localModel", true) && cfg) add(S.modelReady ? `${cfg.name} · ${cfg.device}` : S.loading ? "loading model…" : "model not loaded", S.modelReady ? "ok" : "warn");
   for (const p of (st?.providers ?? []).filter((x) => x.id !== "browser-local")) add(p.id.replace(/^(local|worker):/, "").slice(0, 22), p.circuitOpen ? "bad" : "ok");
   if (st) add(`${fmtTok(st.store.retrievable)} ctx`);
+  if (S.bridge?.ok) add(S.bridge.login ? `bridge · ${S.bridge.login}` : "bridge", "ok");
   if (S.hw && !S.hw.isolated) add("single-thread", "warn");
 }
 

@@ -8,6 +8,7 @@ rem
 rem  Usage:  BarixTerm.bat [project-folder]        interactive session
 rem          BarixTerm.bat -p "your request"        one-shot
 rem          BarixTerm.bat doctor                   check your setup
+rem          BarixTerm.bat bridge                   give the WEB app internet + your GitHub repos + your local model
 rem          BarixTerm.bat self --hours 24          self-edit mode (Barix works on its own repo, up to 24h)
 rem          BarixTerm.bat publish . --repo you/name --pages
 rem          BarixTerm.bat --update                 re-download the latest Barix program files

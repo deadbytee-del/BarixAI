@@ -1,5 +1,6 @@
 // Panels: file tree & editor, "Inside Barix" tabs (context, memory, compute, evidence), settings, compute dialogs.
-import { S, store, openProject, refreshStatus, chips, applyTheme, loadModel, modelConfig, addImages } from "./main.js";
+import { S, store, openProject, refreshStatus, chips, applyTheme, loadModel, modelConfig, addImages, bridgeConfig } from "./main.js";
+import { bridgeStatus } from "./web-access.js";
 import { $, $$, h, fmtTok, fmtBytes, toast, dialog } from "./dom.js";
 import { MODELS } from "./models.js";
 import { icon } from "./icons.js";
@@ -139,7 +140,7 @@ export function openSettings() {
     h("div", { class: "field" }, h("label", { text: "Foundation model on this device" }), model, h("label", { class: "note" }, local, " run a model locally in this browser")),
     h("div", { class: "field" }, h("label", { text: "Reasoning" }), reasoning),
     h("div", { class: "field" }, h("label", { text: "GitHub token (for private repositories)" }), gh, h("label", { class: "note" }, remember, " remember on this device (stored unencrypted in this browser — leave off on shared computers)")),
-    modelsCard(),
+    modelsCard(), bridgeCard(),
     h("p", { class: "note", text: `Targets: browser chat output up to 1,650,000 tokens/message and browser-coding context up to 1,250,000 tokens — budgets, bounded by the model's real window (${fmtTok(modelConfig().window)} here); Barix continues and retrieves to bridge the gap.` }),
     h("div", { class: "actions", style: "justify-content:flex-start;flex-wrap:wrap" }, h("button", { class: "secondary", onclick: async () => { if (!confirm("Delete ALL Barix projects and data stored in this browser?")) return; const root = await navigator.storage.getDirectory(); for await (const [n] of root.entries()) await root.removeEntry(n, { recursive: true }); localStorage.clear(); sessionStorage.clear(); location.reload(); } }, "Erase all local data"))),
     { actions: [{ label: "Cancel" }, { label: "Save", primary: true, run: async () => {
@@ -161,4 +162,35 @@ function modelsCard() {
       } }, icon("Trash2", 14), "Delete"))) : [h("div", { class: "note", text: "No models are stored on this device. Barix downloads one only when you start a chat." })]));
   };
   draw(); return card;
+}
+
+// ---------------------------------------------------------------- Barix Bridge (internet + your GitHub through a local Node helper)
+export async function checkBridge() {
+  const c = bridgeConfig(); if (!c) { S.bridge = null; return null; }
+  try { const st = await bridgeStatus(c); S.bridge = { ok: true, login: st.github?.login ?? null, github: !!st.github?.available, llm: st.llm ?? null }; } catch (e) { S.bridge = { ok: false, error: e.message }; }
+  await syncBridgeModel(); return S.bridge;
+}
+/** If the bridge exposes a local model server (Ollama / llama.cpp / LM Studio), add it as compute — typically far stronger than an in-browser model. */
+export async function syncBridgeModel() {
+  const c = bridgeConfig(); const want = S.bridge?.ok && S.bridge.llm && c ? S.bridge.llm : null; const id = want ? `bridge-llm:${want.model}` : null;
+  if (S.bridgeLlmId && S.bridgeLlmId !== id) { await S.brain?.call("provider.remove", { id: S.bridgeLlmId }).catch(() => {}); S.bridgeLlmId = null; }
+  if (want && S.bridgeLlmId !== id) { try { await S.brain.call("provider.addEndpoint", { id, baseUrl: `${c.url.replace(/\/$/, "")}/v1/llm`, model: want.model, window: want.window || 8192, local: true, quality: 0.75, apiKey: c.token }); S.bridgeLlmId = id; } catch (e) { toast("Bridge model unavailable: " + e.message, "warn"); } }
+  chips();
+}
+function bridgeCard() {
+  const cur = bridgeConfig(); const url = h("input", { value: store.get("barix.bridge.url", "http://127.0.0.1:8799"), placeholder: "http://127.0.0.1:8799", "aria-label": "Bridge address" });
+  const code = h("input", { type: "password", value: cur?.token ?? "", placeholder: "pairing code shown by the bridge", "aria-label": "Pairing code", autocomplete: "off" }); const remember = h("input", { type: "checkbox", checked: store.get("barix.bridge.remember", false) });
+  const out = h("div", { class: "note", role: "status", text: S.bridge?.ok ? `Connected${S.bridge.login ? " as " + S.bridge.login : ""}.` : "Not connected. Without it the model can only use Wikipedia and your own browser." });
+  const connect = h("button", { class: "mini", type: "button", onclick: async () => {
+    const c = { url: url.value.trim().replace(/\/$/, ""), token: code.value.trim() }; if (!c.url || !c.token) { out.textContent = "Enter the bridge address and pairing code."; return; }
+    out.textContent = "Connecting…";
+    try { const st = await bridgeStatus(c); store.set("barix.bridge.url", c.url); store.set("barix.bridge.remember", remember.checked); try { sessionStorage.setItem("barix.bridge.token", c.token); } catch {} if (remember.checked) store.set("barix.bridge.token", c.token); else store.set("barix.bridge.token", "");
+      S.bridge = { ok: true, login: st.github?.login ?? null, github: !!st.github?.available, llm: st.llm ?? null }; await S.brain.call("bridge.set", c); await syncBridgeModel(); out.textContent = `Connected${st.github?.login ? " as " + st.github.login : ""} — internet ${st.web ? "on" : "off"}, GitHub ${st.github?.available ? "on (read-only)" : "not signed in on that PC"}, local model ${st.llm ? st.llm.model + " (in use)" : "none found"}.`; chips(); }
+    catch (e) { S.bridge = { ok: false, error: e.message }; out.textContent = `Could not connect: ${e.message}. Is BarixTerm.bat bridge running? (Safari blocks this; use Chrome, Edge or Firefox.)`; }
+  } }, icon("Check", 14), "Connect");
+  const off = h("button", { class: "mini", type: "button", onclick: async () => { try { sessionStorage.removeItem("barix.bridge.token"); } catch {} store.set("barix.bridge.token", ""); S.bridge = null; await S.brain.call("bridge.set", null); await syncBridgeModel(); code.value = ""; out.textContent = "Disconnected."; chips(); } }, icon("X", 14), "Disconnect");
+  return h("div", { class: "card" }, h("h4", { text: "Barix Bridge — internet + your GitHub" }),
+    h("p", { class: "note", text: "A browser page cannot read arbitrary websites or keep your GitHub login. Run BarixTerm.bat bridge on this PC and connect it here: the model can then search the web, read pages and list/read your GitHub repos (including private ones, read-only). Your GitHub token never leaves your PC." }),
+    h("div", { class: "field" }, h("label", { text: "Bridge address" }), url), h("div", { class: "field" }, h("label", { text: "Pairing code" }), code),
+    h("label", { class: "note" }, remember, " remember the pairing code on this device"), h("div", { style: "display:flex;gap:.4rem;margin:.5rem 0" }, connect, off), out);
 }

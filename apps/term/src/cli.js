@@ -5,7 +5,8 @@ import path from "node:path";
 import os from "node:os";
 import { mkdir, writeFile, rm, appendFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { createBarix, NodeBackend, nodeTreeSitter, GitHubClient, githubTools, parseGitHubUrl, OUTPUT_TARGETS } from "@barix/core";
+import { createBarix, NodeBackend, nodeTreeSitter, GitHubClient, githubTools, webTools, parseGitHubUrl, OUTPUT_TARGETS } from "@barix/core";
+import { createNodeWeb } from "./web-node.js";
 import { execTools } from "./exec-tools.js";
 import { gitTools, Git } from "./git.js";
 import { Publisher } from "./publish.js";
@@ -24,6 +25,7 @@ Usage
   barixterm publish [project-dir] --repo owner/name [--create] [--private] [--pages] [--yes]
   barixterm doctor                           check Node, git, RAM, local model servers, GitHub auth
   barixterm [project-dir] --reasoning on|off|auto   step-by-step thinking (slower, smarter when on); --auto-accept approves commands
+  barixterm bridge [--port 8799] [--origin URL]   local helper that gives the WEB app internet + your GitHub repos (read-only)
   barixterm self [--hours 24] [--goal "text"] [--resume] [--reasoning on] [--no-auto-accept] [--confirm]   self-edit mode: Barix works on its OWN repo for up to 24h
   barixterm worker [--port 8787]             share this machine's model as an opt-in Barix worker
 
@@ -38,7 +40,7 @@ GitHub token: set GITHUB_TOKEN (or sign in with \`gh auth login\`). It is never 
 `;
 
 export function parseArgs(argv) {
-  const o = { _: [], flags: {} }; const takes = new Set(["-p", "--print", "--repo", "--endpoint", "--endpoint-model", "--window", "--model", "--dtype", "--port", "--message", "--branch", "--allow-secret", "--expect", "--hours", "--goal", "--repo-dir", "--reasoning"]);
+  const o = { _: [], flags: {} }; const takes = new Set(["-p", "--print", "--repo", "--endpoint", "--endpoint-model", "--window", "--model", "--dtype", "--port", "--message", "--branch", "--allow-secret", "--expect", "--hours", "--goal", "--repo-dir", "--reasoning", "--origin", "--token", "--llm", "--llm-model", "--llm-window"]);
   for (let i = 0; i < argv.length; i++) { const a = argv[i]; if (a.startsWith("-")) { const [k, v] = a.includes("=") ? a.split(/=(.*)/s) : [a, null]; if (takes.has(k)) o.flags[k.replace(/^-+/, "")] = v ?? argv[++i]; else o.flags[k.replace(/^-+/, "")] = true; } else o._.push(a); }
   return o;
 }
@@ -46,9 +48,10 @@ export function parseArgs(argv) {
 export async function main(argv = process.argv.slice(2), { stdin = process.stdin, stdout = process.stdout } = {}) {
   const args = parseArgs(argv); const f = args.flags; const out = (s = "") => stdout.write(s + "\n");
   if (f.help || f.h) return out(HELP); if (f.version || f.v) return out(VERSION);
-  const cmd = ["doctor", "publish", "worker", "self"].includes(args._[0]) ? args._.shift() : null;
+  const cmd = ["doctor", "publish", "worker", "self", "bridge"].includes(args._[0]) ? args._.shift() : null;
   if (cmd === "doctor") return doctor(out);
   if (cmd === "worker") return (await import("./worker.js")).runWorker(f, out);
+  if (cmd === "bridge") return (await import("./bridge-cli.js")).bridgeCommand({ f, out, VERSION });
   if (cmd === "self") return (await import("./self-cli.js")).selfEditCommand({ f, out, stdin, stdout, C });
 
   // ---- project directory
@@ -66,7 +69,7 @@ export async function main(argv = process.argv.slice(2), { stdin = process.stdin
   if (stdout.isTTY && !f.p) out(UI.banner(VERSION)); else log(`BarixTerm ${VERSION} · project ${dir}`);
   const providers = await setupProviders({ endpoint: f.endpoint, endpointModel: f["endpoint-model"], window: f.window ? +f.window : undefined, model: f.model, dtype: f.dtype, cacheDir: path.join(os.homedir(), ".barix", "models"), onProgress: progressBar(stdout) }, log);
   const caps = { exec: !f["no-exec"], git: !f["no-exec"], github: true };
-  const b = await createBarix({ backend: await NodeBackend.create(dir), runtime: await nodeTreeSitter(), providers, tools: [...execTools, ...gitTools, ...githubTools], capabilities: caps, env: "term", projectId: path.basename(dir), extraCtx: { root: dir, github, confirm, identity: undefined } });
+  const b = await createBarix({ backend: await NodeBackend.create(dir), runtime: await nodeTreeSitter(), providers, tools: [...execTools, ...gitTools, ...githubTools, ...webTools], capabilities: { ...caps, web: !f["no-web"] }, env: "term", projectId: path.basename(dir), extraCtx: { root: dir, github, confirm, identity: undefined, web: createNodeWeb() } });
   if (providers[0]?.exactCounter) b.counter.exact = await providers[0].exactCounter().catch(() => null);
   b.setReasoning(state.reasoning);
   const prof = await b.intel.getProfile();

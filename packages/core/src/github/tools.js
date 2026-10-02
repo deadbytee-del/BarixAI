@@ -76,6 +76,15 @@ export const githubTools = [
     async run({ query }, { github }) { if (!github.authenticated) return bad("GitHub code search requires authorization. Ask the user to provide a token, or import the repo and use search_code."); const r = await github.searchCode(query); return ok(`${r.total_count} results\n` + r.items.map((i) => `${i.repository.full_name}:${i.path}`).join("\n")); },
   },
   {
+    name: "github_my_repos", group: "github", requires: ["github"], description: "List the signed-in user's own GitHub repositories (including private ones the token can see), most recently pushed first.",
+    parameters: P({ max: { type: "integer", minimum: 1, maximum: 100 }, visibility: S("all, public or private (default all)", { enum: ["all", "public", "private"] }) }),
+    async run({ max = 30, visibility = "all" }, { github }) {
+      if (!github.authenticated) return bad("Not signed in to GitHub. Ask the user to add a GitHub token in Settings, or connect the Barix Bridge (it uses their `gh` login).");
+      const rs = await github.get(`/user/repos?per_page=${Math.min(100, max)}&sort=pushed&visibility=${visibility}&affiliation=owner,collaborator,organization_member`);
+      return ok(rs.length ? rs.slice(0, max).map((r) => `${r.full_name}${r.private ? " (private)" : ""}${r.fork ? " (fork)" : ""} — ${short(r.description ?? "no description", 90)} · ${r.language ?? "n/a"} · pushed ${r.pushed_at?.slice(0, 10)}`).join("\n") : "no repositories visible to this token");
+    },
+  },
+  {
     name: "github_import", group: "github", requires: ["github"], mutating: true, description: "Import a repository (or sub-path) into the project's virtual workspace under remote/owner/repo so search_code, find_symbol and read_file work on it.",
     parameters: P({ repo: REPO, ref: S("branch/tag/sha"), path: S("only import this sub-path"), maxFiles: { type: "integer", minimum: 10, maximum: 1500 } }, ["repo"]),
     timeoutMs: 600_000,

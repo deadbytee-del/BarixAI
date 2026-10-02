@@ -45,3 +45,5 @@ Barix is explicit about what is real and what is a target — see **[docs/LIMITS
 Foundation-model choice and evidence: [docs/FOUNDATION_MODEL.md](docs/FOUNDATION_MODEL.md). Deployment: [docs/DEPLOY.md](docs/DEPLOY.md).
 
 MIT licensed. Models are downloaded from their own hosts under their own licenses (Qwen3.5: Apache-2.0).
+
+**Internet, your GitHub repos and a bigger model for the web app:** run `BarixTerm.bat bridge` and connect it in Settings — see [docs/BRIDGE.md](docs/BRIDGE.md).

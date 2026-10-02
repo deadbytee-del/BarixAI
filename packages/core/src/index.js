@@ -16,4 +16,5 @@ export { LongOutput, OUTPUT_TARGETS } from "./agent/continuation.js";
 export { createBarix } from "./barix.js";
 export * from "./p2p/index.js";
 export * from "./github/index.js";
+export * from "./web/index.js";
 export * from "./vision/index.js";
