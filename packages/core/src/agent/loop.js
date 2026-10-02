@@ -101,8 +101,8 @@ export class BarixAgent {
       }
 
       // 5. final candidate ----------------------------------------------------------------------------
-      let answer = stripCalls(parsed.prose || text).trim(); finishReason = finish;
-      if (answer.replace(/\W/g, "").length < 12) { answer = ledger.records.length ? ledger.summary() : "I could not produce an answer for that. Please rephrase or give more detail."; ev({ type: "note", text: "the model returned no usable final text; Barix reported the verified evidence instead" }); }
+      const rawAns = parsed.prose || text; let answer = stripCalls(rawAns).trim(); finishReason = finish;
+      if (!answer.length || (answer.replace(/\W/g, "").length < 12 && stripCalls(rawAns).trim() !== rawAns.trim())) { answer = ledger.records.length ? ledger.summary() : "I could not produce an answer for that. Please rephrase or give more detail."; ev({ type: "note", text: "the model returned no usable final text; Barix reported the verified evidence instead" }); }
       if (finish === "length") { // the answer was cut off: continue it (bounded memory, de-duplicated)
         ev({ type: "continuing", reason: "output reached the per-call limit" });
         const lo = new LongOutput({ router: this.router, counter: this.counter, targetTokens: Math.max(plan.expectedOutputTokens * 3, this.outputTarget), perCallMax: caps.maxOutput, collect: true });

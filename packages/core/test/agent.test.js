@@ -132,3 +132,7 @@ test("weak-model resilience: a call-syntax 'final answer' is replaced by a deter
   assert.ok(!/barix:call/.test(r.text), "no raw tool syntax reaches the user"); assert.match(r.answer, /Changed files[\s\S]*- src\/calc\.js \(patch\)/); assert.match(r.answer, /Tests: PASSED/);
   assert.equal(r.ok, true); assert.equal(await b.fs.readFile("src/calc.js"), "export function add(a, b) {\n  return a + b;\n}\n");
 });
+
+test("short legitimate answers are never replaced by the fallback", async () => {
+  const { b } = await rig(["51"], PROJECT); const r = await b.ask("what is 17 * 3?"); assert.equal(r.answer, "51");
+});

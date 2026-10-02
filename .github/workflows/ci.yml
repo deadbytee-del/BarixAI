@@ -1,0 +1,24 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --ignore-scripts
+      - name: Unit + integration tests (core, BarixTerm, real git, real processes)
+        run: npm test
+      - name: Build the static web app
+        run: npm run build:web
+      - name: Install Chromium for browser tests
+        run: npx playwright-core install --with-deps chromium
+      - name: Real-browser tests (subpath serving, OPFS, WebRTC, sandbox, vision)
+        run: npm run test:browser
+        env: { PLAYWRIGHT_BROWSERS_PATH: 0 }

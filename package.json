@@ -10,8 +10,13 @@
   ],
   "scripts": {
     "test": "node --test packages/core/test/*.test.js apps/term/test/*.test.js",
+    "test:browser": "node --test apps/web/test/web.test.js apps/web/test/p2p.test.js",
+    "test:real": "BARIX_REAL=1 node --test packages/core/test/*.test.js apps/term/test/*.test.js",
     "build:web": "node scripts/build-web.mjs",
-    "bench": "node scripts/bench.mjs"
+    "serve": "node scripts/serve.mjs --base /BarixAI/ --dir apps/web/dist",
+    "bench": "node scripts/bench.mjs",
+    "bench:context": "node --expose-gc scripts/bench-context.mjs",
+    "barixterm": "node apps/term/bin/barixterm.js"
   },
   "engines": {
     "node": ">=20"
@@ -24,5 +29,10 @@
   "dependencies": {
     "@vscode/tree-sitter-wasm": "^0.3.1",
     "web-tree-sitter": "^0.27.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deadbytee-del/BarixAI"
   }
 }
