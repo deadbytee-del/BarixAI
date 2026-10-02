@@ -66,6 +66,7 @@ function onInfer(e) {
   if (m.type === "ready") S.onReady?.();
   else if (m.type === "progress") { S.onProgress?.(m.p); }
   else if (m.type === "loaded") { S.modelReady = true; S.loading = false; store.set("barix.modelCached." + modelConfig().model, true); chips(); S.onLoaded?.(m); }
+  else if (m.type === "fallback") toast("WebGPU could not start on this device; using CPU instead (slower).", "warn");
   else if (m.type === "error") { S.loading = false; toast("Model error: " + m.message, "bad"); console.error(m); S.onLoaded?.({ error: m.message }); chips(); }
 }
 export function loadModel({ silent = false } = {}) {
