@@ -5,30 +5,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Barix</title>
 <meta name="description" content="Barix — a custom AI runtime with its own context engine, memory, coding system and verification, running locally in your browser.">
-<meta name="theme-color" content="#0b1020">
+<meta name="theme-color" content="#050505">
 <link rel="icon" href="./icon.svg" type="image/svg+xml">
 <link rel="manifest" href="./manifest.webmanifest">
-<link rel="stylesheet" href="./assets/styles.css?v=c054f4d-muqm17p8">
+<link rel="stylesheet" href="./assets/styles.css?v=f6d999f-muqmciv1">
 </head>
 <body>
 <a class="skip" href="#composer">Skip to message box</a>
 <div id="app" class="app" data-files="open" data-inside="closed">
   <header class="top">
-    <button class="icon-btn" id="btn-files" aria-label="Toggle files panel" title="Files">☰</button>
-    <div class="brand"><svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--accent)"/><path d="M9 8h8a5 5 0 0 1 2 9.6A5.2 5.2 0 0 1 17 24H9V8zm4 4v3h4a1.5 1.5 0 0 0 0-3h-4zm0 6.2V21h4.2a1.4 1.4 0 0 0 0-2.8H13z" fill="#fff"/></svg><span>Barix</span></div>
+    <button class="icon-btn" id="btn-files" aria-label="Toggle files panel" title="Files"><span data-icon="PanelLeft" data-size="18"></span></button>
+    <div class="brand"><svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fafafa"/><stop offset=".55" stop-color="#9ea2a9"/><stop offset="1" stop-color="#dcdde0"/></linearGradient></defs><rect width="32" height="32" rx="7" fill="url(#bg)"/><path d="M9 8h8a5 5 0 0 1 2 9.6A5.2 5.2 0 0 1 17 24H9V8zm4 4v3h4a1.5 1.5 0 0 0 0-3h-4zm0 6.2V21h4.2a1.4 1.4 0 0 0 0-2.8H13z" fill="#050505"/></svg><span>Barix</span></div>
     <select id="project-select" aria-label="Project"></select>
     <div class="spacer"></div>
     <div class="chips" id="chips" aria-live="polite"></div>
-    <button class="icon-btn" id="btn-inside" aria-label="Toggle Inside Barix panel" title="Inside Barix">◧</button>
-    <button class="icon-btn" id="btn-settings" aria-label="Settings" title="Settings">⚙</button>
+    <button class="icon-btn" id="btn-inside" aria-label="Toggle Inside Barix panel" title="Inside Barix"><span data-icon="PanelRight" data-size="18"></span></button>
+    <button class="icon-btn" id="btn-settings" aria-label="Settings" title="Settings"><span data-icon="Settings" data-size="18"></span></button>
   </header>
 
   <aside class="panel files" id="files-panel" aria-label="Project files">
-    <div class="panel-head"><strong>Files</strong>
+    <div class="panel-head"><strong class="eyebrow">Files</strong>
       <span class="spacer"></span>
-      <button class="mini" id="f-new" title="New file">＋ file</button>
-      <button class="mini" id="f-upload" title="Upload files or a folder">Upload</button>
-      <button class="mini" id="f-more" title="More">⋯</button>
+      <button class="mini" id="f-new" title="New file"><span data-icon="Plus" data-size="14"></span>File</button>
+      <button class="mini" id="f-upload" title="Upload files or a folder"><span data-icon="Upload" data-size="14"></span>Upload</button>
+      <button class="mini" id="f-more" title="More" aria-label="More"><span data-icon="Ellipsis" data-size="14"></span></button>
     </div>
     <div id="tree" class="tree" role="tree" tabindex="0"></div>
     <div class="hint" id="tree-empty" hidden>Empty project. Drop files here, upload a folder, import from GitHub — or just ask Barix to create something.</div>
@@ -42,10 +42,10 @@
     <form id="composer" class="composer" autocomplete="off">
       <div id="attachments" class="attachments"></div>
       <div class="row">
-        <button type="button" class="icon-btn" id="btn-attach" aria-label="Attach image" title="Attach image (or paste / drop)">🖼</button>
+        <button type="button" class="icon-btn" id="btn-attach" aria-label="Attach image" title="Attach image (or paste / drop)"><span data-icon="Paperclip" data-size="18"></span></button>
         <textarea id="input" rows="1" placeholder="Message Barix…" aria-label="Message"></textarea>
-        <button type="submit" class="send" id="btn-send">Send</button>
-        <button type="button" class="stop" id="btn-stop" hidden>Stop</button>
+        <button type="submit" class="send" id="btn-send" aria-label="Send" title="Send"><span data-icon="ArrowUp" data-size="18"></span></button>
+        <button type="button" class="stop" id="btn-stop" aria-label="Stop" title="Stop" hidden><span data-icon="Square" data-size="14"></span></button>
       </div>
       <input type="file" id="img-input" accept="image/*" multiple hidden>
       <div class="meter" id="meter" title="Conversation context: retrievable / cap"></div>
@@ -64,6 +64,6 @@
 </div>
 <div id="dialogs"></div>
 <noscript><p style="padding:2rem">Barix needs JavaScript to run.</p></noscript>
-<script type="module" src="./assets/main.js?v=c054f4d-muqm17p8"></script>
+<script type="module" src="./assets/main.js?v=f6d999f-muqmciv1"></script>
 </body>
 </html>

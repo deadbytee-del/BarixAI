@@ -6,6 +6,7 @@ import { renderMarkdown } from "./markdown.js";
 import { createSandbox, renderHtmlToPng } from "./sandbox.js";
 import { $, $$, h, fmtTok, toast } from "./dom.js";
 import * as P from "./panels.js";
+import { icon, hydrateIcons } from "./icons.js";
 
 const BASE = new URL("./", document.baseURI).href;
 const BUILD = new URL(import.meta.url).searchParams.get("v") ?? "dev";
@@ -24,7 +25,7 @@ async function ensureIsolation() {
 }
 
 async function boot() {
-  applyTheme(store.get("barix.theme", "auto"));
+  hydrateIcons();
   await ensureIsolation();
   S.hw = await probe(); S.rec = recommend(S.hw); S.chosen = store.get("barix.model", null);
   S.endpoints = store.get("barix.endpoints", []).map((e) => ({ ...e, apiKey: sessionStorage.getItem("barix.key." + e.id) ?? undefined }));
@@ -170,11 +171,11 @@ function showWelcome() {
   const rec = S.rec; if (!rec) return; const cfg = modelConfig(); const hasRemote = S.endpoints.length > 0;
   const starters = ["Build a to-do app in plain HTML, CSS and JS", "Explain how a binary search works, briefly", "Review the files I upload for bugs"];
   const dev = (m) => (m === rec.model ? rec.device : (S.hw.webgpu && S.hw.f16 ? "webgpu" : "wasm"));
-  const tier = (m) => { const d = dev(m), c = m[d] ?? m.wasm, isRec = m === rec.model; return h("div", { class: "tier" + (isRec ? " rec" : "") }, h("div", { class: "grow" }, h("strong", { text: m.name }), isRec ? h("span", { class: "chip ok", style: "margin-left:.5rem", text: "recommended" }) : null, h("div", { class: "note", text: `${m.note} ~${c.mb} MB · ${d === "webgpu" ? "WebGPU" : "CPU (WebAssembly)"} · ${Math.round(m.window[d] / 1024)}k window` })), h("button", { class: isRec ? "primary" : "secondary", onclick: () => { S.chosen = { id: m.id, device: d }; store.set("barix.model", S.chosen); openProject(S.project).then(() => loadModel()); } }, isRec ? "Download & start" : "Use this"));
+  const tier = (m) => { const d = dev(m), c = m[d] ?? m.wasm, isRec = m === rec.model; return h("div", { class: "tier" + (isRec ? " rec" : "") }, h("div", { class: "grow" }, h("strong", { text: m.name }), isRec ? h("span", { class: "chip ok", style: "margin-left:.5rem", text: "recommended" }) : null, h("div", { class: "note", text: `${m.note} ~${c.mb} MB · ${d === "webgpu" ? "WebGPU" : "CPU (WebAssembly)"} · ${Math.round(m.window[d] / 1024)}k window` })), h("button", { class: isRec ? "primary" : "secondary", onclick: () => { S.chosen = { id: m.id, device: d }; store.set("barix.model", S.chosen); openProject(S.project).then(() => loadModel()); } }, icon(isRec ? "Download" : "Check", 15), isRec ? "Download & start" : "Use this"));
   };
   const w = h("div", { class: "welcome" },
     h("div", { class: "hero" }, h("h1", { text: "What can Barix build for you?" }), h("p", { class: "lead", text: "Your own AI engineer with real memory, code understanding and verified results — running privately in this browser. No account, no server." })),
-    h("div", { class: "starters" }, starters.map((t) => h("button", { class: "starter", type: "button", onclick: () => { const i = $("#input"); i.value = t; i.focus(); autosize(); } }, t))),
+    h("div", { class: "starters" }, starters.map((t) => h("button", { class: "starter", type: "button", onclick: () => { const i = $("#input"); i.value = t; i.focus(); autosize(); } }, icon("Sparkles", 14), t))),
     h("div", { class: "card model-card" }, h("div", { class: "kv" }, h("span", { text: "Model" }), h("span", { text: hasRemote ? "your connected server (see Inside Barix → Compute)" : S.modelReady ? cfg.name + " · ready" : cfg.name + " · not downloaded yet" }), h("span", { text: "Runs on" }), h("span", { text: rec.reason }), h("span", { text: "Your files" }), h("span", { text: S.hw.opfs ? "stay in this browser (OPFS)" + (S.hw.fsAccess ? " · or open a local folder" : "") : "OPFS unavailable — projects will not persist" })),
       hasRemote ? null : tier(rec.model)),
     h("details", { class: "more" }, h("summary", { text: "Other model sizes & compute options" }), h("div", { class: "tiers" }, rec.alternatives.map(tier)), h("p", { class: "note", text: "Prefer your own server or volunteer workers? Open Inside Barix → Compute. " + FOUNDATION_NOTE })),
@@ -184,7 +185,7 @@ function showWelcome() {
 
 // ------------------------------------------------------------------ input handling
 function autosize() { const t = $("#input"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 160) + "px"; }
-export function applyTheme(t) { document.documentElement.dataset.theme = t === "auto" ? "" : t; if (t === "auto") document.documentElement.removeAttribute("data-theme"); }
+export function applyTheme() { /* Barix ships one theme: black, glossy silver, ingot-gray outlines */ }
 async function addImages(files) { for (const f of files) { if (!f.type.startsWith("image/")) continue; if (f.size > 12 * 1048576) { toast(`${f.name} is larger than 12 MB`, "warn"); continue; } S.attachments.push({ name: f.name || "pasted-image.png", bytes: await f.arrayBuffer(), url: URL.createObjectURL(f) }); } P.renderAttachments(); }
 export { addImages };
 function bind() {

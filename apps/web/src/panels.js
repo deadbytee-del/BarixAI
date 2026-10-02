@@ -2,16 +2,18 @@
 import { S, store, openProject, refreshStatus, chips, applyTheme, loadModel, modelConfig, addImages } from "./main.js";
 import { $, $$, h, fmtTok, fmtBytes, toast, dialog } from "./dom.js";
 import { MODELS } from "./models.js";
+import { icon } from "./icons.js";
+import { listCachedModels, deleteCachedModel } from "./model-store.js";
 import { zipFiles } from "./zip.js";
 import { createInvite, acceptInvite, connectBroadcast } from "@barix/core";
 
 // ---------------------------------------------------------------- projects
 export function renderProjectSelect(projects, current) {
-  const sel = $("#project-select"); sel.replaceChildren(...projects.map((p) => h("option", { value: p.id, text: p.name, selected: p.id === current })), h("option", { value: "__new", text: "＋ New project…" }), h("option", { value: "__folder", text: "📁 Open local folder…" }));
+  const sel = $("#project-select"); sel.replaceChildren(...projects.map((p) => h("option", { value: p.id, text: p.name, selected: p.id === current })), h("option", { value: "__new", text: "＋ New project…" }), h("option", { value: "__folder", text: "Open local folder…" }));
   sel.onchange = async () => {
     const v = sel.value; const list = store.get("barix.projects", projects);
     if (v === "__new") { const name = prompt("Project name"); if (!name) return renderProjectSelect(list, S.project.id); const p = { id: "p" + Date.now().toString(36), name: name.slice(0, 40), kind: "opfs" }; list.push(p); store.set("barix.projects", list); renderProjectSelect(list, p.id); return openProject(p); }
-    if (v === "__folder") { try { const handle = await showDirectoryPicker({ mode: "readwrite" }); const p = { id: "f" + Date.now().toString(36), name: "📁 " + handle.name, kind: "handle" }; list.push(p); store.set("barix.projects", list); await saveHandle(p.id, handle); renderProjectSelect(list, p.id); return openProject(p, { handle }); } catch (e) { toast(e.name === "AbortError" ? "Cancelled" : "Could not open the folder: " + e.message, "warn"); return renderProjectSelect(list, S.project.id); } }
+    if (v === "__folder") { try { const handle = await showDirectoryPicker({ mode: "readwrite" }); const p = { id: "f" + Date.now().toString(36), name: handle.name, kind: "handle" }; list.push(p); store.set("barix.projects", list); await saveHandle(p.id, handle); renderProjectSelect(list, p.id); return openProject(p, { handle }); } catch (e) { toast(e.name === "AbortError" ? "Cancelled" : "Could not open the folder: " + e.message, "warn"); return renderProjectSelect(list, S.project.id); } }
     const p = list.find((x) => x.id === v); if (p.kind === "handle") { const handle = await loadHandle(p.id); if (!handle || (await handle.requestPermission({ mode: "readwrite" })) !== "granted") { toast("Permission to the folder was not granted", "warn"); return renderProjectSelect(list, S.project.id); } return openProject(p, { handle }); } openProject(p);
   };
 }
@@ -26,7 +28,7 @@ export async function refreshTree() {
   if (!S.brain) return; const entries = await S.brain.call("fs.tree").catch(() => []); const root = $("#tree"); root.replaceChildren(); $("#tree-empty").hidden = entries.length > 0;
   const byDir = new Map(); for (const e of entries) { const d = e.path.includes("/") ? e.path.slice(0, e.path.lastIndexOf("/")) : ""; (byDir.get(d) ?? byDir.set(d, []).get(d)).push(e); }
   const draw = (dir, depth) => { for (const e of (byDir.get(dir) ?? []).sort((a, b) => (a.type === b.type ? a.path.localeCompare(b.path) : a.type === "dir" ? -1 : 1))) {
-    const name = e.path.slice(e.path.lastIndexOf("/") + 1); const row = h("div", { class: "row " + e.type, role: "treeitem", tabindex: "0", style: `padding-left:${0.4 + depth * 0.9}rem`, title: e.path }, h("span", { text: e.type === "dir" ? (open.has(e.path) ? "▾" : "▸") : "·" }), h("span", { text: name }), e.type === "file" ? h("span", { class: "size", text: fmtBytes(e.size) }) : null);
+    const name = e.path.slice(e.path.lastIndexOf("/") + 1); const row = h("div", { class: "row " + e.type, role: "treeitem", tabindex: "0", style: `padding-left:${0.4 + depth * 0.9}rem`, title: e.path }, e.type === "dir" ? icon(open.has(e.path) ? "ChevronDown" : "ChevronRight", 14) : icon("File", 14), h("span", { text: name }), e.type === "file" ? h("span", { class: "size", text: fmtBytes(e.size) }) : null);
     row.onclick = () => (e.type === "dir" ? (open.has(e.path) ? open.delete(e.path) : open.add(e.path), refreshTree()) : openFile(e.path)); row.onkeydown = (ev) => ev.key === "Enter" && row.onclick(); root.append(row); if (e.type === "dir" && open.has(e.path)) draw(e.path, depth + 1); } };
   draw("", 0);
 }
@@ -70,9 +72,9 @@ export function renderAttachments() { const el = $("#attachments"); el.replaceCh
 // ---------------------------------------------------------------- inside barix
 let tab = "context", lastReport = null;
 export function renderTab(t) { if (t) tab = t; const b = $("#tab-body"); if (!b) return; b.replaceChildren(); ({ context: tabContext, memory: tabMemory, compute: tabCompute, evidence: tabEvidence })[tab](b); }
-export function onContext(report) { lastReport = report; const m = $("#meter"); if (m) { const used = report.promptTokens, w = report.window; m.replaceChildren(h("i", { style: `width:${Math.min(100, used / w * 100)}%;background:var(--accent)`, title: `prompt ${used}/${w} tokens` })); } if (tab === "context" && $("#app").dataset.inside === "open") renderTab(); }
+export function onContext(report) { lastReport = report; const m = $("#meter"); if (m) { const used = report.promptTokens, w = report.window; m.replaceChildren(h("i", { style: `width:${Math.min(100, used / w * 100)}%;background:#fff`, title: `prompt ${used}/${w} tokens` })); } if (tab === "context" && $("#app").dataset.inside === "open") renderTab(); }
 export function onStatus() { if ($("#app").dataset.inside === "open") renderTab(); }
-const COLORS = { system: "#6d5efc", task: "#12805c", remembered: "#2da4d8", summaries: "#d48a1a", recalled: "#c14fb0", code: "#e0533f", recent: "#7d8aa5" };
+const COLORS = { system: "#ffffff", task: "#d3d5d9", remembered: "#b3b6bc", summaries: "#92959d", recalled: "#73767e", code: "#575a62", recent: "#3f4249" };
 function tabContext(b) {
   const st = S.lastStatus; const r = lastReport;
   b.append(h("div", { class: "card" }, h("h4", { text: "Last prompt Barix built" }), r ? [h("div", { class: "bar" }, Object.entries(r.sections).map(([k, v]) => h("i", { title: `${k}: ${v}`, style: `width:${v / r.window * 100}%;background:${COLORS[k] ?? "#999"}` }))), h("div", { class: "legend" }, Object.entries(r.sections).filter(([, v]) => v).map(([k, v]) => h("span", {}, h("b", { style: `background:${COLORS[k]}` }), `${k} ${fmtTok(v)}`))), h("div", { class: "kv", style: "margin-top:.5rem" }, h("span", { text: "Prompt / window" }), h("span", { text: `${fmtTok(r.promptTokens)} / ${fmtTok(r.window)}` }), h("span", { text: "Build time" }), h("span", { text: `${r.buildMs} ms` }), h("span", { text: "Prefix reuse" }), h("span", { text: `${Math.round((r.prefixReuse ?? 0) * 100)}% of prompt unchanged since last step` }), r.compaction?.compacted ? [h("span", { text: "Compacted" }), h("span", { text: `${r.compaction.compacted} items (×${r.compaction.ratio})` })] : null)] : h("p", { class: "note", text: "Send a message to see exactly which context Barix selected." })));
@@ -90,7 +92,7 @@ async function tabMemory(b) {
 }
 const memRow = (x) => h("div", { class: "note", style: "display:flex;gap:.4rem;align-items:flex-start" }, h("span", { style: "flex:1", text: x.text }), h("button", { class: "mini", "aria-label": "Forget", onclick: async () => { await S.brain.call("memory.forget", { id: x.id }); renderTab(); } }, "forget"));
 async function tabCompute(b) {
-  const st = await refreshStatus(); const cap = st.capacity;
+  const st = await refreshStatus(); const cap = st.capacity; b.append(modelsCard());
   b.append(h("div", { class: "card" }, h("h4", { text: "Compute Barix can use" }), st.providers.length ? st.providers.map((p) => h("div", { style: "margin-bottom:.4rem" }, h("div", {}, h("b", { text: p.id }), " ", h("span", { class: "chip " + (p.circuitOpen ? "bad" : "ok"), text: p.circuitOpen ? "paused" : p.kind })), h("div", { class: "note", text: `${p.model} · window ${fmtTok(p.window)}${p.tps ? ` · ${p.tps} tok/s` : ""} · served ${p.served}${p.failures ? ` · ${p.failures} failures` : ""}` }), p.id === "browser-local" ? null : h("button", { class: "mini", onclick: async () => { await S.brain.call("provider.remove", { id: p.id }); renderTab(); } }, "remove"))) : h("p", { class: "note", text: "No compute yet. Download a model (welcome screen), add a server, or connect a worker." }), h("div", { class: "note", text: "Barix routes each request to the best available option, fails over automatically, and never bypasses a provider's limits." })));
   b.append(h("div", { class: "card" }, h("h4", { text: "Capacity this month" }), h("div", { class: "kv" }, h("span", { text: "Used" }), h("span", { text: `${fmtTok(cap.usedThisMonth)} tokens` }), h("span", { text: "Target" }), h("span", { text: "500M tokens/month" }), h("span", { text: "Progress" }), h("span", { text: `${cap.percentOfTarget}%` })), h("p", { class: "note", text: cap.note })));
   b.append(h("div", { class: "card" }, h("h4", { text: "Add compute" }), h("div", { style: "display:flex;gap:.4rem;flex-wrap:wrap" }, h("button", { class: "mini", onclick: addEndpointDialog }, "Server / endpoint…"), h("button", { class: "mini", onclick: connectPeerDialog }, "Connect to a worker…"), h("button", { class: "mini", onclick: shareDialog }, "Share this browser…")), h("div", { class: "field" }, h("label", { text: "Routing preference" }), (() => { const s = h("select", { onchange: () => S.brain.call("router.setStrategy", { strategy: s.value }) }, ["privacy", "quality", "speed"].map((x) => h("option", { value: x, text: { privacy: "Privacy (local first)", quality: "Quality", speed: "Speed" }[x] }))); return s; })())));
@@ -129,17 +131,32 @@ function shareDialog() {
 
 // ---------------------------------------------------------------- settings
 export function openSettings() {
-  const theme = h("select", {}, ["auto", "light", "dark"].map((x) => h("option", { value: x, text: x, selected: store.get("barix.theme", "auto") === x })));
   const gh = h("input", { type: "password", placeholder: "GitHub token (fine-grained, read-only is enough for private repos)", value: S.githubToken ?? "" }); const remember = h("input", { type: "checkbox", checked: store.get("barix.ghRemember", false) });
   const local = h("input", { type: "checkbox", checked: store.get("barix.localModel", true) });
   const model = h("select", {}, MODELS.map((m) => h("option", { value: m.id, text: `${m.name} — ~${(m[S.hw.webgpu && S.hw.f16 ? "webgpu" : "wasm"] ?? m.wasm).mb} MB`, selected: modelConfig().model === m.id })));
-  dialog("Settings", h("div", {}, h("div", { class: "field" }, h("label", { text: "Theme" }), theme),
+  dialog("Settings", h("div", {},
     h("div", { class: "field" }, h("label", { text: "Foundation model on this device" }), model, h("label", { class: "note" }, local, " run a model locally in this browser")),
     h("div", { class: "field" }, h("label", { text: "GitHub token (for private repositories)" }), gh, h("label", { class: "note" }, remember, " remember on this device (stored unencrypted in this browser — leave off on shared computers)")),
+    modelsCard(),
     h("p", { class: "note", text: `Targets: browser chat output up to 1,650,000 tokens/message and browser-coding context up to 1,250,000 tokens — budgets, bounded by the model's real window (${fmtTok(modelConfig().window)} here); Barix continues and retrieves to bridge the gap.` }),
-    h("div", { class: "actions", style: "justify-content:flex-start;flex-wrap:wrap" }, h("button", { class: "secondary", onclick: async () => { for (const k of await caches.keys()) await caches.delete(k); for (const k of Object.keys(localStorage)) if (k.startsWith("barix.modelCached.")) localStorage.removeItem(k); toast("Downloaded model files removed"); } }, "Delete downloaded models"), h("button", { class: "secondary", onclick: async () => { if (!confirm("Delete ALL Barix projects and data stored in this browser?")) return; const root = await navigator.storage.getDirectory(); for await (const [n] of root.entries()) await root.removeEntry(n, { recursive: true }); localStorage.clear(); sessionStorage.clear(); location.reload(); } }, "Erase all local data"))),
+    h("div", { class: "actions", style: "justify-content:flex-start;flex-wrap:wrap" }, h("button", { class: "secondary", onclick: async () => { if (!confirm("Delete ALL Barix projects and data stored in this browser?")) return; const root = await navigator.storage.getDirectory(); for await (const [n] of root.entries()) await root.removeEntry(n, { recursive: true }); localStorage.clear(); sessionStorage.clear(); location.reload(); } }, "Erase all local data"))),
     { actions: [{ label: "Cancel" }, { label: "Save", primary: true, run: async () => {
-      store.set("barix.theme", theme.value); applyTheme(theme.value); store.set("barix.localModel", local.checked); store.set("barix.ghRemember", remember.checked);
+      store.set("barix.localModel", local.checked); store.set("barix.ghRemember", remember.checked);
       S.githubToken = gh.value; sessionStorage.setItem("barix.gh", gh.value); if (remember.checked) store.set("barix.gh", gh.value); else localStorage.removeItem("barix.gh"); await S.brain.call("github.token", { token: gh.value });
       const changed = model.value !== modelConfig().model; if (changed) { const m = MODELS.find((x) => x.id === model.value); S.chosen = { id: m.id, device: S.hw.webgpu && S.hw.f16 ? "webgpu" : "wasm" }; store.set("barix.model", S.chosen); await openProject(S.project); } toast("Saved"); } }] });
+}
+
+// ---------------------------------------------------------------- models on this device (listing + deletion)
+function modelsCard() {
+  const list = h("div", { class: "models-list" }, h("div", { class: "note", text: "Checking this device…" })); const card = h("div", { class: "card" }, h("h4", { text: "Models on this device" }), list);
+  const draw = async () => {
+    const items = await listCachedModels().catch(() => []); const active = modelConfig().model;
+    list.replaceChildren(...(items.length ? items.map((m) => h("div", { class: "model-row" }, icon("HardDrive", 16), h("div", { class: "grow" }, h("div", { text: m.name }), h("div", { class: "note", text: `${fmtBytes(m.bytes)} · ${m.files} file(s)${m.id === active && S.modelReady ? " · in use" : ""}` })),
+      h("button", { class: "mini danger", type: "button", title: "Delete from this device", "aria-label": `Delete ${m.name}`, onclick: async () => {
+        if (!confirm(`Delete ${m.name} (${fmtBytes(m.bytes)}) from this device? You can download it again later.`)) return;
+        const wasLoaded = m.id === active && (S.modelReady || S.loading); if (wasLoaded) { S.infer?.terminate?.(); S.modelReady = false; S.loading = false; }
+        const n = await deleteCachedModel(m.id); toast(`Deleted ${m.name} (${n} file(s), ${fmtBytes(m.bytes)} freed)`); if (wasLoaded) await openProject(S.project); chips(); draw();
+      } }, icon("Trash2", 14), "Delete"))) : [h("div", { class: "note", text: "No models are stored on this device. Barix downloads one only when you start a chat." })]));
+  };
+  draw(); return card;
 }
