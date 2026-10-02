@@ -2,6 +2,7 @@
 // (llama.cpp, Ollama, LM Studio) → built-in ONNX model (Transformers.js on CPU) sized to your RAM.
 // All of these are COMPUTE for Barix; none is presented to the user as "the AI".
 import os from "node:os";
+import { trustSystemNetwork, resilientFetch, describeError } from "./net.js";
 import { execFile } from "node:child_process";
 import { OpenAICompatProvider, TransformersProvider, nodeTransformers, isOpenWeight } from "@barix/core";
 
@@ -54,12 +55,12 @@ export async function setupProviders(opts = {}, log = () => {}) {
   if (opts.builtin !== false && (!providers.length || opts.alsoBuiltin)) {
     const chosen = opts.model ? { model: opts.model, dtype: opts.dtype ?? "q4", window: opts.window ?? 8192, label: opts.model } : ramTier();
     // Try the chosen model first; if it cannot load on this machine, say WHY and fall back to smaller ones instead of failing later with a vague error.
-    const ladder = [chosen, ...TIERS.filter((x) => x.model !== chosen.model && size(x) < size(chosen))]; const tf = await nodeTransformers({ cacheDir: opts.cacheDir }); const errors = [];
+    const ladder = [chosen, ...TIERS.filter((x) => x.model !== chosen.model && size(x) < size(chosen))]; trustSystemNetwork(); const tf = await nodeTransformers({ cacheDir: opts.cacheDir, fetch: resilientFetch((m) => log(m)) }); const errors = [];
     for (const t of ladder) {
       const p = new TransformersProvider({ loadTransformers: async () => tf, model: t.model, dtype: t.dtype, device: "cpu", window: t.window, maxOutput: 1024, quality: /4B|9B/.test(t.model) ? 0.7 : /2B/.test(t.model) ? 0.55 : 0.4, progress: opts.onProgress, id: "builtin-onnx" });
       log(`loading built-in ${t.label} — the first run downloads the model; CPU inference is slow (a local llama.cpp/Ollama server or GPU is much faster)`);
       try { await p.load(); providers.push(p); log(`provider: built-in ${t.label} ready`); break; }
-      catch (e) { errors.push(`${t.label}: ${String(e?.message ?? e).split("\n")[0].slice(0, 300)}`); log(`✗ could not load ${t.label}: ${errors.at(-1).split(": ").slice(1).join(": ")}`); }
+      catch (e) { errors.push(`${t.label}: ${describeError(e)}`); log(`✗ could not load ${t.label}: ${errors.at(-1).split(": ").slice(1).join(": ")}`); }
     }
     if (!providers.length) throw Object.assign(new Error(`No model could be loaded on this machine.\n  ${errors.join("\n  ")}\nTry: install the Microsoft Visual C++ Redistributable (Windows), update Node.js to 20+, free some disk space, check your internet connection, or point Barix at a local server (Ollama / llama.cpp) with --endpoint.`), { code: "ENOMODEL" });
   }

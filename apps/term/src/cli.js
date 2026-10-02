@@ -11,6 +11,7 @@ import { gitTools, Git } from "./git.js";
 import { Publisher } from "./publish.js";
 import { setupProviders, githubToken, systemInfo, detectLocalServers } from "./providers-setup.js";
 import * as UI from "./ui.js";
+import { describeError, trustSystemNetwork } from "./net.js";
 
 const C = process.stdout.isTTY && !process.env.NO_COLOR ? { dim: "\x1b[2m", bold: "\x1b[1m", cyan: "\x1b[36m", green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m", off: "\x1b[0m" } : { dim: "", bold: "", cyan: "", green: "", red: "", yellow: "", off: "" };
 export const VERSION = "0.1.0";
@@ -153,11 +154,12 @@ async function doctor(out) {
 }
 
 async function doctorModel(out) {
+  trustSystemNetwork();
   const ok = (t) => out(`${C.green}✓${C.off} ${t}`), bad = (t) => out(`${C.red}✗${C.off} ${t}`);
   out(`${C.dim}app: ${path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")} (BarixTerm ${VERSION})${C.off}`);
   try { await import("onnxruntime-node"); ok("onnxruntime-node (native model runtime) loads"); } catch (e) { bad(`onnxruntime-node failed to load: ${String(e.message).split("\n")[0]}\n    → on Windows install the "Microsoft Visual C++ Redistributable (x64)" and run BarixTerm.bat --update, then retry`); }
   const dir = path.join(os.homedir(), ".barix", "models"); try { await mkdir(dir, { recursive: true }); const t = path.join(dir, ".w"); await writeFile(t, "x"); await rm(t); ok(`model folder writable: ${dir}`); } catch (e) { bad(`cannot write to ${dir}: ${e.message}`); }
-  try { const r = await fetch("https://huggingface.co/onnx-community/Qwen3.5-0.8B-ONNX/resolve/main/config.json", { method: "HEAD", signal: AbortSignal.timeout(8000) }); r.ok ? ok("huggingface.co reachable (model downloads work)") : bad(`huggingface.co answered ${r.status}`); } catch (e) { bad(`cannot reach huggingface.co: ${e.cause?.code ?? e.message} (firewall/proxy/offline? models cannot be downloaded)`); }
+  try { const r = await fetch("https://huggingface.co/onnx-community/Qwen3.5-0.8B-ONNX/resolve/main/config.json", { method: "HEAD", signal: AbortSignal.timeout(8000) }); r.ok ? ok("huggingface.co reachable (model downloads work)") : bad(`huggingface.co answered ${r.status}`); } catch (e) { bad(`Node cannot reach huggingface.co: ${describeError(e)}\n    → Barix will automatically download through curl/PowerShell instead. If that also fails: check firewall/VPN/proxy/antivirus HTTPS scanning, or use the website (it downloads in your browser).`); }
   try { const { statfs } = await import("node:fs/promises"); const st = await statfs(dir); const gb = (st.bavail * st.bsize) / 2 ** 30; gb < 3 ? bad(`only ${gb.toFixed(1)} GB free on the model drive (need ~1–3 GB)`) : ok(`${gb.toFixed(0)} GB free for models`); } catch { /* statfs unavailable */ }
   try { const t0 = Date.now(); const [p] = await setupProviders({ cacheDir: dir, onProgress: progressBar(process.stdout) }, (l) => out(`${C.dim}${l}${C.off}`)); ok(`model loads (${((Date.now() - t0) / 1000).toFixed(1)}s) and is ready`); void p; } catch (e) { bad(e.message); }
 }

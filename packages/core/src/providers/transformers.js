@@ -124,8 +124,8 @@ export class TransformersProvider {
 function dataUrlToBlob(url) { const m = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(url); if (!m) throw new BarixError("EIMAGE", "image must be a data: URL"); const bin = Uint8Array.from(atob(m[3]), (c) => c.charCodeAt(0)); return new Blob([bin], { type: m[1] }); }
 
 /** Load Transformers.js in Node with a local cache dir (BarixTerm, tests, benchmarks). */
-export async function nodeTransformers({ cacheDir } = {}) {
-  const tf = await import("@huggingface/transformers"); if (cacheDir) tf.env.cacheDir = cacheDir; return tf;
+export async function nodeTransformers({ cacheDir, fetch } = {}) {
+  const tf = await import("@huggingface/transformers"); if (cacheDir) tf.env.cacheDir = cacheDir; if (fetch) tf.env.fetch = fetch; return tf;
 }
 
 function cloneCache(c) { const n = Object.create(Object.getPrototypeOf(c)); for (const [k, v] of Object.entries(c)) n[k] = v && typeof v.clone === "function" ? v.clone() : v; return n; }
