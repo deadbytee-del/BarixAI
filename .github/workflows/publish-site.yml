@@ -1,0 +1,27 @@
+name: Publish site
+# GitHub Pages is configured as "Deploy from a branch: main / (root)". This keeps the built Barix app at the repo root fresh.
+on:
+  push:
+    branches: [main]
+    paths-ignore: [index.html, 404.html, coi-sw.js, manifest.webmanifest, icon.svg, build.json, assets/**, wasm/**, ort/**, esbuild.wasm, .nojekyll]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: publish-site
+  cancel-in-progress: true
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: npm run publish:site
+      - name: Commit the built site if it changed
+        run: |
+          git config user.name "barix-bot"; git config user.email "barix-bot@users.noreply.github.com"
+          git add -A index.html 404.html coi-sw.js manifest.webmanifest icon.svg build.json assets wasm ort esbuild.wasm .nojekyll
+          if git diff --cached --quiet; then echo "site already up to date"; else git commit -m "Publish site [skip ci]" && git push; fi
