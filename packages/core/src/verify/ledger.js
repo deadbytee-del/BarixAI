@@ -16,6 +16,14 @@ export class EvidenceLedger {
   forPath(path) { return this.records.filter((r) => r.ok && FS_KINDS.has(r.kind) && (r.data?.path === path || r.data?.from === path)); }
   changedFiles() { const m = new Map(); for (const r of this.records) if (r.ok && FS_KINDS.has(r.kind)) { if (r.kind === "fs-delete") m.delete(r.data.path); else { if (r.kind === "fs-move") m.delete(r.data.from); m.set(r.data.path, r); } } return [...m.keys()]; }
   reset() { this.records = []; }
+  /** Deterministic, model-independent report of what verifiably happened. Used when the model's own answer is missing or unusable. */
+  summary() {
+    const L = []; const files = this.changedFiles(); const w = (p) => this.forPath(p).at(-1);
+    if (files.length) L.push("Changed files (each verified on disk after writing):", ...files.map((p) => `- ${p}${w(p)?.data?.action ? ` (${w(p).data.action})` : ""}`)); else L.push("No files were changed.");
+    for (const [k, label] of [["build", "Build"], ["test", "Tests"], ["lint", "Lint"]]) { const e = this.last(k); if (!e) continue; const stale = this.mutationsAfter(e.seq).length; L.push(`${label}: ${e.ok ? "PASSED" : "FAILED"}${e.data?.summary ? " — " + String(e.data.summary).slice(0, 120) : ""}${stale ? " (files changed after this run)" : ""}`); }
+    if (!this.last("test") && !this.last("build")) L.push("No tests or build were run.");
+    return L.join("\n");
+  }
 
   /** Verify every checkable claim in `text`. */
   async verify(text) {
@@ -75,7 +83,7 @@ const DEPLOY = /\b(?:deployed|(?:is|are) (?:now )?(?:live|up and running|availab
 
 export function extractClaims(text) {
   const claims = []; const seen = new Set();
-  const body = text.replace(/```[\s\S]*?```/g, " "); // code blocks are content, not claims
+  const body = text.replace(/<barix:call[\s\S]*?(?:<\/barix:call>|$)|<tool_call>[\s\S]*?(?:<\/tool_call>|$)/g, " ").replace(/```[\s\S]*?```/g, " "); // code blocks and tool calls are content, not claims
   const sentences = body.split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter(Boolean);
   for (const s of sentences) {
     if (HEDGE.test(s)) continue;

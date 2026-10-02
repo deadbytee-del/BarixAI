@@ -114,3 +114,21 @@ test("CallStreamFilter hides tool-call blocks across arbitrary chunking", () => 
   for (let i = 0; i < s.length; i += 3) out.push(...f.push(s.slice(i, i + 3))); out.push(...f.flush());
   assert.equal(out.join(""), "Let me check.\n and then done <3");
 });
+
+test("termination guarantee: a model that loops on tool calls has tools withdrawn and must answer from evidence", async () => {
+  const { b, model } = await rig([call("read_file", { path: "src/calc.js" }), call("read_file", { path: "src/calc.js" }), call("read_file", { path: "src/calc.js" }), "The file `src/calc.js` defines `add` (currently subtracting).", "unused"], PROJECT);
+  const r = await b.ask("What does src/calc.js do?"); assert.equal(r.steps, 4); assert.match(r.answer, /defines `add`/);
+  const last = model.calls.at(-1); assert.ok(!/barix:call/.test(last.messages[0].content), "tool protocol is gone from the final prompt"); assert.match(last.messages.at(-1).content, /No more tool calls are available/);
+});
+
+test("weak-model resilience: a call-syntax 'final answer' is replaced by a deterministic evidence report", async () => {
+  const { b } = await rig([
+    call("read_file", { path: "src/calc.js" }),
+    call("patch_file", { path: "src/calc.js", edits: [{ search: "a - b", replace: "a + b" }] }),
+    call("run_tests", {}), call("run_tests", {}),               // loops → tools withdrawn
+    call("run_tests", {}),                                        // …and it STILL emits a call as its final answer
+  ], PROJECT);
+  const r = await b.ask("fix add in src/calc.js and run the tests");
+  assert.ok(!/barix:call/.test(r.text), "no raw tool syntax reaches the user"); assert.match(r.answer, /Changed files[\s\S]*- src\/calc\.js \(patch\)/); assert.match(r.answer, /Tests: PASSED/);
+  assert.equal(r.ok, true); assert.equal(await b.fs.readFile("src/calc.js"), "export function add(a, b) {\n  return a + b;\n}\n");
+});

@@ -17,8 +17,14 @@ export class TransformersProvider {
   async load() {
     if (!this._load) this._load = (async () => {
       const t0 = now(); const tf = await this.loadTransformers(); this.tf = tf;
-      this.tok = await tf.AutoTokenizer.from_pretrained(this.modelId, { progress_callback: this.progress });
-      this.model = await tf.AutoModelForCausalLM.from_pretrained(this.modelId, { dtype: this.dtype, ...(this.device ? { device: this.device } : {}), progress_callback: this.progress });
+      if (this.caps.vision) {   // one multimodal model object serves both text and image prompts (no duplicate weights)
+        this.processor = await tf.AutoProcessor.from_pretrained(this.modelId, { progress_callback: this.progress }); this.tok = this.processor.tokenizer;
+        const d = typeof this.dtype === "string" ? { embed_tokens: this.dtype, vision_encoder: this.dtype, decoder_model_merged: this.dtype } : this.dtype;
+        this.model = await tf.AutoModelForImageTextToText.from_pretrained(this.modelId, { dtype: d, ...(this.device ? { device: this.device } : {}), progress_callback: this.progress });
+      } else {
+        this.tok = await tf.AutoTokenizer.from_pretrained(this.modelId, { progress_callback: this.progress });
+        this.model = await tf.AutoModelForCausalLM.from_pretrained(this.modelId, { dtype: this.dtype, ...(this.device ? { device: this.device } : {}), progress_callback: this.progress });
+      }
       this.loadMs = now() - t0; return this;
     })().catch((e) => { this._load = null; throw e; });
     return this._load;
@@ -32,8 +38,18 @@ export class TransformersProvider {
     const prev = this._lock; let release; this._lock = new Promise((r) => (release = r)); await prev; this._busy = true;
     try {
       const msgs = toChatMessages(req.messages);
-      const prompt = tok.apply_chat_template(msgs, { add_generation_prompt: true, tokenize: false, enable_thinking: req.reasoning === "on" }) + (req.prefill ?? "");
-      const inputs = tok(prompt); const promptTokens = inputs.input_ids.dims[1];
+      const hasImages = msgs.some((m) => m.images?.length);
+      if (hasImages && !this.processor) throw new BarixError("EVISION", "this provider was created without vision support");
+      let prompt, inputs;
+      if (hasImages) {
+        const imgs = []; const parts = msgs.map((m) => (m.images?.length ? { role: m.role, content: [...m.images.map(() => ({ type: "image" })), { type: "text", text: m.content }] } : m));
+        for (const m of msgs) for (const url of m.images ?? []) imgs.push(await this.tf.RawImage.fromBlob(dataUrlToBlob(url)));
+        prompt = this.processor.apply_chat_template(parts, { add_generation_prompt: true, enable_thinking: req.reasoning === "on" }) + (req.prefill ?? "");
+        inputs = await this.processor(prompt, imgs.length === 1 ? imgs[0] : imgs);
+      } else {
+        prompt = tok.apply_chat_template(msgs, { add_generation_prompt: true, tokenize: false, enable_thinking: req.reasoning === "on" }) + (req.prefill ?? ""); inputs = tok(prompt);
+      }
+      const promptTokens = inputs.input_ids.dims[1];
       if (promptTokens + 1 > this.caps.window) throw new BarixError("ECONTEXT", `prompt (${promptTokens}) exceeds provider window ${this.caps.window}`);
       const q = []; let wake = null; const push = (e) => { q.push(e); wake?.(); wake = null; };
       const splitter = new ThinkSplitter(); let visible = "", stopped = false;
@@ -62,6 +78,8 @@ export class TransformersProvider {
     } finally { this._busy = false; release(); }
   }
 }
+
+function dataUrlToBlob(url) { const m = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(url); if (!m) throw new BarixError("EIMAGE", "image must be a data: URL"); const bin = Uint8Array.from(atob(m[3]), (c) => c.charCodeAt(0)); return new Blob([bin], { type: m[1] }); }
 
 /** Load Transformers.js in Node with a local cache dir (BarixTerm, tests, benchmarks). */
 export async function nodeTransformers({ cacheDir } = {}) {

@@ -15,12 +15,14 @@ import { EvidenceLedger } from "./verify/ledger.js";
 import { Router } from "./providers/router.js";
 import { UsageTracker } from "./providers/usage.js";
 import { BarixAgent } from "./agent/loop.js";
+import { VisionPipeline } from "./vision/pipeline.js";
+import { visionTools } from "./vision/tools.js";
 
 /**
  * @param {{backend?:any, runtime?:any, embedder?:any, providers?:object[], tools?:object[], capabilities?:object, env?:"browser"|"term",
  *   kv?:any, projectId?:string, persist?:boolean, extraCtx?:object, strategy?:string, maxTotalTokens?:number, summarizer?:Function, vision?:any, exactTokens?:Function}} o
  */
-export async function createBarix({ backend = new MemoryBackend(), runtime = null, embedder = new HashEmbedder(), providers = [], tools = [], capabilities = {}, env = "browser", kv, projectId = "default", persist = true, extraCtx = {}, strategy = "privacy", maxTotalTokens, summarizer, vision, exactTokens } = {}) {
+export async function createBarix({ backend = new MemoryBackend(), runtime = null, embedder = new HashEmbedder(), providers = [], tools = [], capabilities = {}, env = "browser", kv, projectId = "default", persist = true, extraCtx = {}, strategy = "privacy", maxTotalTokens, summarizer, vision, codec, browser, exactTokens } = {}) {
   const counter = new TokenCounter({ exact: exactTokens });
   const fs = await new BarixFS(backend).init();
   const intel = new ProjectIntelligence({ fs, runtime, embedder, counter });
@@ -31,13 +33,15 @@ export async function createBarix({ backend = new MemoryBackend(), runtime = nul
   const compactor = new Compactor({ store, summarizer });
   const engine = new ContextEngine({ store, memory, intel, compactor, counter });
   const ledger = new EvidenceLedger({ fs });
-  const registry = new ToolRegistry().registerAll(builtinTools).registerAll(tools);
-  const ctx = { fs, intel, ledger, memory, engine, readSet: new Map(), capabilities, redact: true, env, ...extraCtx };
-  const executor = new ToolExecutor({ registry, ctx, ledger, counter });
+  const registry = new ToolRegistry().registerAll(builtinTools).registerAll(visionTools).registerAll(tools);
   const router = new Router({ usage, strategy }); for (const p of providers) router.register(p.provider ?? p, p.provider ? p : {});
-  const agent = new BarixAgent({ router, store, memory, engine, intel, registry, executor, ledger, counter, fs, capabilities, env, vision });
+  const pipeline = vision ?? (codec ? new VisionPipeline({ router, codec, counter }) : null);
+  const caps = { ...capabilities, ...(pipeline && providers.some((p) => (p.provider ?? p).caps?.vision) ? { vision: true } : {}), ...(browser ? { browser: true } : {}) };
+  const ctx = { fs, intel, ledger, memory, engine, readSet: new Map(), capabilities: caps, redact: true, env, vision: pipeline, browser, ...extraCtx };
+  const executor = new ToolExecutor({ registry, ctx, ledger, counter });
+  const agent = new BarixAgent({ router, store, memory, engine, intel, registry, executor, ledger, counter, fs, capabilities: caps, env, vision: pipeline });
   await intel.indexAll();
   const profile = await intel.getProfile(); if (fs.files().length) await memory.setProjectProfile(profile, { importantFiles: await intel.importantFiles() });
-  return { fs, intel, store, memory, engine, compactor, ledger, registry, executor, router, agent, counter, usage, ctx,
+  return { fs, intel, store, memory, engine, compactor, ledger, registry, executor, router, agent, counter, usage, ctx, vision: pipeline,
     ask: (text, opts) => agent.run(text, opts) };
 }

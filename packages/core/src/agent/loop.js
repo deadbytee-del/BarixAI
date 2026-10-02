@@ -26,6 +26,7 @@ export class BarixAgent {
 
   async run(userText, { images = [], signal, onEvent = () => {}, sink } = {}) {
     const ev = (e) => onEvent({ ts: Date.now(), ...e });
+    this._visualRounds = 0; this.lastVisual = null;
     const t0 = Date.now(); const usage = { promptTokens: 0, completionTokens: 0, calls: 0 }; const routes = []; let steps = 0, corrections = 0;
     const { store, memory, engine, registry, executor, ledger, fs } = this;
     const projectFiles = fs.files().length;
@@ -47,8 +48,8 @@ export class BarixAgent {
 
     // 3. tool selection --------------------------------------------------------------------------
     const bestQuality = (await this.router.rank({}))[0]?.provider.caps.quality ?? 0.5;
-    const tools = plan.needs.tools ? registry.select(this.capabilities, plan.toolGroups, { maxTier: bestQuality < 0.65 && plan.complexity < 0.7 ? 1 : 2 }) : [];
-    const system = buildSystemPrompt({ tools }); ev({ type: "tools", tools: tools.map((t) => t.name) });
+    let tools = plan.needs.tools ? registry.select(this.capabilities, plan.toolGroups, { maxTier: bestQuality < 0.65 && plan.complexity < 0.7 ? 1 : 2 }) : [];
+    let system = buildSystemPrompt({ tools }); ev({ type: "tools", tools: tools.map((t) => t.name) });
 
     const seen = new Map(); let gateNotes = []; let finalText = null, finishReason = "stop", verification = null;
     // 4. the loop ----------------------------------------------------------------------------------
@@ -82,7 +83,7 @@ export class BarixAgent {
         if (parsed.danglingCall && !parsed.calls.length && !parsed.errors.length) await store.append({ role: "tool", kind: "tool-result", text: "Your tool call was cut off before it was closed. Re-send it completely (shorter content, or split into several patch_file edits).", meta: { tool: "barix-parser", ok: false } });
         // stuck detection: identical call 3x
         for (const c of parsed.calls) { const sig = c.tool + JSON.stringify(c.args); seen.set(sig, (seen.get(sig) ?? 0) + 1); }
-        const stuck = [...seen.values()].some((n) => n >= 3);
+        const stuck = [...seen].some(([sig, n]) => n >= (/^run_/.test(sig) ? 2 : 3));
         const results = await executor.runAll(parsed.calls, { signal, onEvent: ev });
         for (const r of results) {
           await store.append({ role: "tool", kind: "tool-result", text: r.output, importance: r.ok ? 0.4 : 0.7, meta: { ...r.meta, callId: r.call.id } });
@@ -91,12 +92,17 @@ export class BarixAgent {
           if (!r.ok) memory.noteError(`${r.call.tool}: ${(r.meta?.summary ?? r.output).slice(0, 160)}`); else if (r.evidence) memory.noteProgress(`${r.call.tool} ${r.meta?.path ?? ""}`.trim());
         }
         if (parsed.deduped) await store.append({ role: "tool", kind: "tool-result", text: `${parsed.deduped} duplicate call(s) in your reply were ignored. Do not repeat a call; use the result you already have.`, meta: { tool: "barix-guard", ok: false } });
-        if (stuck) await store.append({ role: "tool", kind: "tool-result", text: "You have repeated the same tool call 3 times with no progress. Change your approach, use a different tool, or explain what is blocking you.", meta: { tool: "barix-guard", ok: false } });
+        if (stuck) {
+          // Guarantee termination: withdraw tools so the model must answer from the evidence it already has.
+          await store.append({ role: "user", text: "Barix: you are repeating a tool call that already returned its result. No more tool calls are available. Write your final answer now, based only on the tool results above; state plainly anything that failed or was not done.", meta: { system: true } });
+          tools = []; system = buildSystemPrompt({ tools }); ev({ type: "note", text: "tools withdrawn after repeated calls; asking for a final answer" });
+        }
         continue;
       }
 
       // 5. final candidate ----------------------------------------------------------------------------
-      let answer = parsed.prose || text.trim(); finishReason = finish;
+      let answer = stripCalls(parsed.prose || text).trim(); finishReason = finish;
+      if (answer.replace(/\W/g, "").length < 12) { answer = ledger.records.length ? ledger.summary() : "I could not produce an answer for that. Please rephrase or give more detail."; ev({ type: "note", text: "the model returned no usable final text; Barix reported the verified evidence instead" }); }
       if (finish === "length") { // the answer was cut off: continue it (bounded memory, de-duplicated)
         ev({ type: "continuing", reason: "output reached the per-call limit" });
         const lo = new LongOutput({ router: this.router, counter: this.counter, targetTokens: Math.max(plan.expectedOutputTokens * 3, this.outputTarget), perCallMax: caps.maxOutput, collect: true });
@@ -140,6 +146,23 @@ export class BarixAgent {
     }
     if (failed) { await store.append({ role: "user", text: "Barix verification: the run above FAILED. Read the output, fix the cause, and re-run before answering.", meta: { system: true } }); return { continueLoop: true, notes: [] }; }
     if (ran) { const again = await ledger.verify(answer); verification.unverified = again.unverified; verification.contradicted = again.contradicted; verification.verified = again.verified; verification.claims = again.claims; verification.ok = again.ok; }
+    // (d) vision+coding: render the result and compare it with the user's reference image
+    if (plan.intent === "vision-coding" && this.vision?.referenceId && this.capabilities.browser && ledger.changedFiles().length && (this._visualRounds ?? 0) < 2) {
+      const page = ledger.changedFiles().find((p) => /\.html?$/i.test(p)) ?? (this.fs.exists("index.html") ? "index.html" : null);
+      if (page) {
+        this._visualRounds = (this._visualRounds ?? 0) + 1; ev({ type: "gate", action: `rendering ${page} and comparing it with the reference image` });
+        const [pv] = await executor.runAll([{ id: "gate-preview", tool: "preview_page", args: { path: page } }], { signal, onEvent: ev });
+        await store.append({ role: "tool", kind: "tool-result", text: pv.output, meta: { ...pv.meta, callId: pv.call.id, auto: true } });
+        if (pv.ok) {
+          const [cmp] = await executor.runAll([{ id: "gate-compare", tool: "compare_images", args: { reference: this.vision.referenceId, current: pv.meta.summary } }], { signal, onEvent: ev });
+          await store.append({ role: "tool", kind: "tool-result", text: cmp.output, meta: { ...cmp.meta, callId: cmp.call.id, auto: true } });
+          const sim = cmp.data?.similarity ?? 0; this.lastVisual = { similarity: sim, page };
+          if (sim >= 0.93) notes.push(`✓ Barix rendered ${page} and compared it with your image: ${(sim * 100).toFixed(1)}% visually similar`);
+          else if (this._visualRounds < 2) { await store.append({ role: "user", text: `Barix visual verification: the rendered page is only ${(sim * 100).toFixed(1)}% similar to the reference. Fix the largest differences listed above (colors/positions), then answer.`, meta: { system: true } }); return { continueLoop: true, notes: [] }; }
+          else notes.push(`! After ${this._visualRounds} attempts the render is ${(sim * 100).toFixed(1)}% similar to your image (not a close match); see the differences reported above`);
+        }
+      }
+    }
     // (c) file/remote claims without evidence → ask the model to do it or retract (once per correction round)
     const fileClaims = verification.unverified.filter((u) => u.type === "file" || u.type === "remote").concat(verification.contradicted.filter((u) => u.type === "file"));
     if (fileClaims.length && corrections < this.maxCorrections) {
@@ -150,6 +173,7 @@ export class BarixAgent {
   }
 }
 
+const stripCalls = (t) => t.replace(/<barix:call[\s\S]*?(?:<\/barix:call>|$)|<tool_call>[\s\S]*?(?:<\/tool_call>|$)|<function=[\s\S]*?(?:<\/function>|$)/g, "");
 function endOfLastCall(text) { let end = 0; for (const m of text.matchAll(/<\/barix:call>|<\/tool_call>|<\/function>/g)) end = m.index + m[0].length; return end || text.length; }
 function summarize(v) { return { ok: v.ok, verified: v.verified.length, unverified: v.unverified.map((c) => ({ type: c.type, path: c.path, reason: c.reason })), contradicted: v.contradicted.map((c) => ({ type: c.type, path: c.path, reason: c.reason })) }; }
 

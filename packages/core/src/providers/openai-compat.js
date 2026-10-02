@@ -25,7 +25,7 @@ export class OpenAICompatProvider {
     catch (e) { return { ok: false, reason: e.message }; }
   }
   async *generate(req) {
-    const body = { model: this.model, messages: toChatMessages(req.messages), stream: true, stream_options: { include_usage: true }, max_tokens: Math.min(req.maxTokens ?? 512, this.caps.maxOutput), temperature: req.temperature ?? 0, ...(req.topP ? { top_p: req.topP } : {}), ...(req.stop?.length ? { stop: req.stop } : {}), ...(this.caps.promptCache ? { cache_prompt: true } : {}), ...this.extraBody };
+    const body = { model: this.model, messages: toChatMessages(req.messages).map((m) => (m.images?.length ? { role: m.role, content: [{ type: "text", text: m.content }, ...m.images.map((url) => ({ type: "image_url", image_url: { url } }))] } : m)), stream: true, stream_options: { include_usage: true }, max_tokens: Math.min(req.maxTokens ?? 512, this.caps.maxOutput), temperature: req.temperature ?? 0, ...(req.topP ? { top_p: req.topP } : {}), ...(req.stop?.length ? { stop: req.stop } : {}), ...(this.caps.promptCache ? { cache_prompt: true } : {}), ...this.extraBody };
     if (req.reasoning === "off") body.chat_template_kwargs = { enable_thinking: false };
     let res; try { res = await this._fetch(`${this.baseUrl}/chat/completions`, { method: "POST", headers: this.#headers(), body: JSON.stringify(body), signal: req.signal }); }
     catch (e) { if (e.name === "AbortError") throw e; throw new BarixError("EPROVIDER", `cannot reach ${this.baseUrl}: ${e.message}`); }
