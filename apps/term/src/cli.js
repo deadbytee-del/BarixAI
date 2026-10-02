@@ -20,6 +20,7 @@ Usage
   barixterm -p "prompt" [project-dir]        one-shot: run a single request and exit
   barixterm publish [project-dir] --repo owner/name [--create] [--private] [--pages] [--yes]
   barixterm doctor                           check Node, git, RAM, local model servers, GitHub auth
+  barixterm self [--hours 24] [--goal "text"] [--resume] [--yes]   self-edit mode: Barix works on its OWN repo for up to 24h
   barixterm worker [--port 8787]             share this machine's model as an opt-in Barix worker
 
 Options
@@ -33,7 +34,7 @@ GitHub token: set GITHUB_TOKEN (or sign in with \`gh auth login\`). It is never 
 `;
 
 export function parseArgs(argv) {
-  const o = { _: [], flags: {} }; const takes = new Set(["-p", "--print", "--repo", "--endpoint", "--endpoint-model", "--window", "--model", "--dtype", "--port", "--message", "--branch", "--allow-secret", "--expect"]);
+  const o = { _: [], flags: {} }; const takes = new Set(["-p", "--print", "--repo", "--endpoint", "--endpoint-model", "--window", "--model", "--dtype", "--port", "--message", "--branch", "--allow-secret", "--expect", "--hours", "--goal", "--repo-dir"]);
   for (let i = 0; i < argv.length; i++) { const a = argv[i]; if (a.startsWith("-")) { const [k, v] = a.includes("=") ? a.split(/=(.*)/s) : [a, null]; if (takes.has(k)) o.flags[k.replace(/^-+/, "")] = v ?? argv[++i]; else o.flags[k.replace(/^-+/, "")] = true; } else o._.push(a); }
   return o;
 }
@@ -41,9 +42,10 @@ export function parseArgs(argv) {
 export async function main(argv = process.argv.slice(2), { stdin = process.stdin, stdout = process.stdout } = {}) {
   const args = parseArgs(argv); const f = args.flags; const out = (s = "") => stdout.write(s + "\n");
   if (f.help || f.h) return out(HELP); if (f.version || f.v) return out(VERSION);
-  const cmd = ["doctor", "publish", "worker"].includes(args._[0]) ? args._.shift() : null;
+  const cmd = ["doctor", "publish", "worker", "self"].includes(args._[0]) ? args._.shift() : null;
   if (cmd === "doctor") return doctor(out);
   if (cmd === "worker") return (await import("./worker.js")).runWorker(f, out);
+  if (cmd === "self") return (await import("./self-cli.js")).selfEditCommand({ f, out, stdin, stdout, C });
 
   // ---- project directory
   let dir = args._[0] ? path.resolve(args._[0]) : process.cwd();
