@@ -13,7 +13,7 @@ export function renderToolDefs(tools) {
   return tools.map((t) => {
     const p = t.parameters?.properties ?? {}, req = new Set(t.parameters?.required ?? []);
     const sig = Object.entries(p).map(([k, s]) => `${k}${req.has(k) ? "" : "?"}: ${s.enum ? s.enum.map((e) => JSON.stringify(e)).join("|") : s.type === "array" ? `${s.items?.type ?? "any"}[]` : s.type}`).join(", ");
-    return `- ${t.name}(${sig}) — ${t.description.split(/(?<=[.!?])\s/)[0].slice(0, 90)}`;
+    return `- ${t.name}(${sig}) — ${t.description}`;
   }).join("\n");
 }
 export const PROTOCOL_HELP = `To use a tool, emit exactly:
