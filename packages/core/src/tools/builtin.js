@@ -6,6 +6,7 @@ import { checkSyntax } from "../code/extract.js";
 import { unifiedDiff } from "../fs/diff.js";
 
 const S = (description, extra = {}) => ({ type: "string", description, ...extra });
+const PATH = (d = "project-relative path") => S(d, { aliases: ["file", "filepath", "file_path", "filename", "filePath", "name"] });
 const P = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: false });
 const ok = (output, extra = {}) => ({ ok: true, output, ...extra });
 const bad = (output, extra = {}) => ({ ok: false, output, ...extra });
@@ -33,7 +34,7 @@ const staleCheck = async (ctx, args) => {
 export const builtinTools = [
   {
     name: "read_file", group: "core", description: "Read a text file with line numbers. Use startLine/endLine for large files.",
-    parameters: P({ path: S("project-relative path"), startLine: { type: "integer", minimum: 1 }, endLine: { type: "integer", minimum: 1 } }, ["path"]),
+    parameters: P({ path: PATH(), startLine: { type: "integer", minimum: 1 }, endLine: { type: "integer", minimum: 1 } }, ["path"]),
     async run({ path, startLine = 1, endLine }, ctx) {
       if (!ctx.fs.exists(path)) { const near = ctx.fs.files().filter((f) => f.endsWith("/" + path.split("/").pop()) || f.split("/").pop() === path).slice(0, 5); return bad(`No such file: ${path}.${near.length ? ` Similar: ${near.join(", ")}` : ""}`); }
       const whole = await ctx.fs.readFile(path); ctx.readSet.set(path, hash53(whole));
@@ -43,13 +44,13 @@ export const builtinTools = [
     },
   },
   {
-    name: "list_dir", group: "core", description: "List a directory (name, type, size).",
+    name: "list_dir", group: "core", tier: 2, description: "List a directory (name, type, size).",
     parameters: P({ path: S("directory, default project root"), recursive: { type: "boolean" } }),
     async run({ path = "", recursive = false }, ctx) {
       try { const e = ctx.fs.list(path, { recursive }); return ok(e.length ? e.slice(0, 300).map((x) => `${x.type === "dir" ? "d" : "-"} ${x.path}${x.type === "file" ? ` (${x.size}B)` : "/"}`).join("\n") + (e.length > 300 ? `\n… ${e.length - 300} more` : "") : "(empty directory)"); } catch (e) { return bad(e.message); }
     },
   },
-  { name: "project_tree", group: "core", description: "Compact tree of the whole project.", parameters: P({ maxEntries: { type: "integer", minimum: 10, maximum: 1000 } }), async run({ maxEntries = 200 }, ctx) { const t = ctx.fs.renderTree({ maxEntries }); return ok(t || "(project is empty)"); } },
+  { name: "project_tree", group: "core", tier: 2, description: "Compact tree of the whole project.", parameters: P({ maxEntries: { type: "integer", minimum: 10, maximum: 1000 } }), async run({ maxEntries = 200 }, ctx) { const t = ctx.fs.renderTree({ maxEntries }); return ok(t || "(project is empty)"); } },
   { name: "find_files", group: "core", description: "Find files by glob (e.g. src/**/*.ts).", parameters: P({ glob: S("glob pattern") }, ["glob"]), async run({ glob }, ctx) { const f = ctx.fs.files({ glob }); return ok(f.length ? f.slice(0, 200).join("\n") + (f.length > 200 ? `\n… ${f.length - 200} more` : "") : "no files match"); } },
   {
     name: "grep", group: "core", description: "Exact text/regex search across files. Returns path:line: text.",
@@ -67,7 +68,7 @@ export const builtinTools = [
   },
   {
     name: "write_file", group: "core", mutating: true, description: "Create a file, or fully overwrite one you have read. Parent directories are created. Verified after writing.",
-    parameters: P({ path: S("project-relative path"), content: S("complete file content"), overwrite: { type: "boolean", description: "allow replacing an unread existing file" } }, ["path", "content"]),
+    parameters: P({ path: PATH(), content: S("complete file content", { aliases: ["contents", "text", "code", "body"] }), overwrite: { type: "boolean", description: "allow replacing an unread existing file" } }, ["path", "content"]),
     async guard(a, ctx) { if (ctx.fs.exists(a.path) && !a.overwrite) { if (!ctx.readSet.has(a.path)) return `${a.path} already exists. Read it first with read_file (or pass overwrite:true to replace it).`; return staleCheck(ctx, a); } return null; },
     async run({ path, content }, ctx) {
       const existed = ctx.fs.exists(path); const before = existed ? await ctx.fs.readFile(path).catch(() => "") : "";
@@ -80,7 +81,7 @@ export const builtinTools = [
   },
   {
     name: "patch_file", group: "core", mutating: true, description: "Edit a file you have read with exact search/replace edits. Each `search` must match exactly once (or set all:true). Prefer this over rewriting files.",
-    parameters: P({ path: S("file path"), edits: { type: "array", items: P({ search: S("exact existing text"), replace: S("replacement text"), all: { type: "boolean" } }, ["search"]) } }, ["path", "edits"]),
+    parameters: P({ path: PATH("file path"), edits: { type: "array", aliases: ["edit", "changes", "patches", "replacements"], items: P({ search: S("exact existing text", { aliases: ["old", "find", "old_string", "oldText", "original", "from"] }), replace: S("replacement text", { aliases: ["new", "new_string", "newText", "replacement", "with", "to"] }), all: { type: "boolean" } }, ["search"]) } }, ["path", "edits"]),
     async guard(a, ctx) { return needRead(ctx, a) ?? (await staleCheck(ctx, a)); },
     async run({ path, edits }, ctx) {
       let r; try { r = await ctx.fs.patchFile(path, edits); } catch (e) { return bad(`${e.message}\nRe-read the file (read_file) and use text that matches exactly.`); }
@@ -90,8 +91,8 @@ export const builtinTools = [
     },
   },
   {
-    name: "apply_patch", group: "core", mutating: true, description: "Apply a unified diff (single file) to a file you have read.",
-    parameters: P({ path: S("file path"), diff: S("unified diff with @@ hunks") }, ["path", "diff"]),
+    name: "apply_patch", group: "core", tier: 2, mutating: true, description: "Apply a unified diff (single file) to a file you have read.",
+    parameters: P({ path: PATH("file path"), diff: S("unified diff with @@ hunks") }, ["path", "diff"]),
     async guard(a, ctx) { return needRead(ctx, a) ?? (await staleCheck(ctx, a)); },
     async run({ path, diff }, ctx) {
       let r; try { r = await ctx.fs.applyPatch(path, diff); } catch (e) { return bad(`${e.message}. Re-read the file and regenerate the diff.`); }
@@ -100,16 +101,16 @@ export const builtinTools = [
     },
   },
   {
-    name: "delete_file", group: "core", mutating: true, description: "Delete a file (recoverable via restore_version).", parameters: P({ path: S("file path") }, ["path"]),
+    name: "delete_file", group: "core", tier: 2, mutating: true, description: "Delete a file (recoverable via restore_version).", parameters: P({ path: PATH("file path") }, ["path"]),
     async run({ path }, ctx) { try { await ctx.fs.deleteFile(path); } catch (e) { return bad(e.message); } ctx.readSet.delete(path); await ctx.intel?.sync(); const gone = !ctx.fs.exists(path); return gone ? ok(`Deleted ${path}.`, { evidence: { kind: "fs-delete", data: { path } } }) : bad(`${path} still exists after delete`); },
   },
   {
     name: "move_file", group: "core", mutating: true, description: "Move or rename a file or directory.", parameters: P({ from: S("source"), to: S("destination") }, ["from", "to"]),
     async run({ from, to }, ctx) { try { await ctx.fs.move(from, to); } catch (e) { return bad(e.message); } for (const [p, h] of [...ctx.readSet]) if (p === from || p.startsWith(from + "/")) { ctx.readSet.delete(p); ctx.readSet.set(to + p.slice(from.length), h); } await ctx.intel?.sync(); return ctx.fs.exists(to) && !ctx.fs.exists(from) ? ok(`Moved ${from} → ${to}.`, { evidence: { kind: "fs-move", data: { from, path: to } } }) : bad("move did not take effect"); },
   },
-  { name: "make_dir", group: "core", mutating: true, description: "Create a directory (and parents).", parameters: P({ path: S("directory") }, ["path"]), async run({ path }, ctx) { await ctx.fs.mkdir(path); return ok(`Directory ${path} exists.`); } },
+  { name: "make_dir", group: "core", tier: 2, mutating: true, description: "Create a directory (and parents).", parameters: P({ path: S("directory") }, ["path"]), async run({ path }, ctx) { await ctx.fs.mkdir(path); return ok(`Directory ${path} exists.`); } },
   {
-    name: "outline", group: "code", description: "List the symbols (functions, classes, methods, types) of a file with line ranges.", parameters: P({ path: S("file path") }, ["path"]),
+    name: "outline", group: "code", description: "List the symbols (functions, classes, methods, types) of a file with line ranges.", parameters: P({ path: PATH("file path") }, ["path"]),
     async run({ path }, ctx) { await ctx.intel?.sync(); const o = ctx.intel?.outline(path) ?? []; return o.length ? ok(o.map((s) => `${String(s.startLine).padStart(4)}-${s.endLine}  ${s.parent ? s.parent + "." : ""}${s.name} [${s.kind}]${s.exported ? " exported" : ""}  ${s.signature.slice(0, 100)}`).join("\n")) : ok("no symbols found (unsupported language or empty file)"); },
   },
   {
@@ -117,31 +118,31 @@ export const builtinTools = [
     async run({ name, kind }, ctx) { await ctx.intel?.sync(); const r = ctx.intel?.findSymbol(name, { kind, limit: 15 }) ?? []; return ok(r.length ? r.map((s) => `${s.path}:${s.startLine}  ${s.parent ? s.parent + "." : ""}${s.name} [${s.kind}]  ${s.signature.slice(0, 100)}`).join("\n") : `no symbol matching "${name}"`); },
   },
   {
-    name: "references", group: "code", description: "Find where an identifier is used (lines).", parameters: P({ name: S("identifier") }, ["name"]),
+    name: "references", group: "code", tier: 2, description: "Find where an identifier is used (lines).", parameters: P({ name: S("identifier") }, ["name"]),
     async run({ name }, ctx) { const r = await ctx.intel.references(name, { max: 60 }); return ok(r.length ? r.map((x) => `${x.path}:${x.line}: ${x.text}`).join("\n") : `no references to ${name}`); },
   },
   {
-    name: "impact", group: "code", description: "What depends on this file? (reverse import graph) — check before changing shared code.", parameters: P({ path: S("file path") }, ["path"]),
+    name: "impact", group: "code", tier: 2, description: "What depends on this file? (reverse import graph) — check before changing shared code.", parameters: P({ path: PATH("file path") }, ["path"]),
     async run({ path }, ctx) { await ctx.intel?.sync(); const d = ctx.intel.symbols.dependencies(path), r = ctx.intel.impactOf(path, 4); return ok(`imports: ${d.join(", ") || "(none in project)"}\nexternal: ${ctx.intel.symbols.externalPackages(path).join(", ") || "(none)"}\nimpacted (transitive dependents): ${r.map((x) => `${x.path}@${x.distance}`).join(", ") || "(none)"}`); },
   },
-  { name: "analyze_project", group: "code", description: "Detect languages, frameworks, build/test commands, entry points and code style.", parameters: P({}), async run(_, ctx) { const p = await ctx.intel.getProfile(); return ok(`${p.summary}\nManifests: ${p.manifests.join(", ") || "none"}\nDependencies: ${p.dependencies.runtime.slice(0, 20).join(", ") || "none"}`); } },
+  { name: "analyze_project", group: "code", tier: 2, description: "Detect languages, frameworks, build/test commands, entry points and code style.", parameters: P({}), async run(_, ctx) { const p = await ctx.intel.getProfile(); return ok(`${p.summary}\nManifests: ${p.manifests.join(", ") || "none"}\nDependencies: ${p.dependencies.runtime.slice(0, 20).join(", ") || "none"}`); } },
   {
-    name: "check_syntax", group: "code", description: "Parse a file with its real grammar and report syntax errors.", parameters: P({ path: S("file path") }, ["path"]),
+    name: "check_syntax", group: "code", tier: 2, description: "Parse a file with its real grammar and report syntax errors.", parameters: P({ path: PATH("file path") }, ["path"]),
     async run({ path }, ctx) { const text = await ctx.fs.readFile(path); const e = await checkSyntax(ctx.intel?.symbols.runtime, path, text); return e === null ? ok("no grammar available for this file type; syntax NOT checked") : e.length ? bad(e.map((x) => `line ${x.line}:${x.column} ${x.message} ${x.text ? JSON.stringify(x.text) : ""}`).join("\n")) : ok("syntax OK"); },
   },
   {
-    name: "file_history", group: "versions", description: "List saved versions of a file.", parameters: P({ path: S("file path") }, ["path"]),
+    name: "file_history", group: "versions", tier: 2, description: "List saved versions of a file.", parameters: P({ path: PATH("file path") }, ["path"]),
     async run({ path }, ctx) { const h = ctx.fs.history(path); return ok(h.length ? h.map((v) => `v${v.n} ${new Date(v.ts).toISOString()} ${v.op} ${v.size}B${v.deleted ? " (deleted)" : ""}`).join("\n") : "no history"); },
   },
   {
-    name: "diff_file", group: "versions", description: "Unified diff between a saved version and the current file.", parameters: P({ path: S("file path"), version: { type: "integer", minimum: 1 } }, ["path"]),
+    name: "diff_file", group: "versions", tier: 2, description: "Unified diff between a saved version and the current file.", parameters: P({ path: PATH("file path"), version: { type: "integer", minimum: 1 } }, ["path"]),
     async run({ path, version }, ctx) { const h = ctx.fs.history(path); if (!h.length) return bad("no history"); try { const d = await ctx.fs.diffVersions(path, version ?? h[h.length - 1].n); return ok(d || "no differences"); } catch (e) { return bad(e.message); } },
   },
   {
-    name: "restore_version", group: "versions", mutating: true, description: "Restore a file to a saved version.", parameters: P({ path: S("file path"), version: { type: "integer", minimum: 1 } }, ["path", "version"]),
+    name: "restore_version", group: "versions", tier: 2, mutating: true, description: "Restore a file to a saved version.", parameters: P({ path: PATH("file path"), version: { type: "integer", minimum: 1 } }, ["path", "version"]),
     async run({ path, version }, ctx) { try { await ctx.fs.restore(path, version); } catch (e) { return bad(e.message); } const v = await afterWrite(ctx, path, "restore"); return ok(`Restored ${path} to v${version}. ${v.syntax}`, { evidence: { kind: "fs-write", data: { path, hash: v.hash, size: v.text?.length ?? 0, action: "restore" } } }); },
   },
-  { name: "snapshot", group: "versions", mutating: true, description: "Save a named snapshot of the whole project.", parameters: P({ label: S("snapshot label") }), async run({ label = "" }, ctx) { const s = await ctx.fs.snapshot(label); return ok(`Snapshot ${s.id} saved (${s.files} files).`); } },
+  { name: "snapshot", group: "versions", tier: 2, mutating: true, description: "Save a named snapshot of the whole project.", parameters: P({ label: S("snapshot label") }), async run({ label = "" }, ctx) { const s = await ctx.fs.snapshot(label); return ok(`Snapshot ${s.id} saved (${s.files} files).`); } },
   {
     name: "recall", group: "core", description: "Retrieve earlier conversation details: pass a segment ref like #42 or #40-45, or a search query.", parameters: P({ query: S("#n, #a-b, or search text") }, ["query"]),
     async run({ query }, ctx) { return ok(await ctx.engine.recall(query)); },

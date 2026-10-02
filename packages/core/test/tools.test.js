@@ -97,3 +97,12 @@ test("verification ledger: verifies true claims, catches false ones (anti-halluc
   assert.equal(extractClaims("I will update src/x.js and then the build should pass. Should I run the tests?").length, 0, "future/hedged statements are not claims");
   assert.equal(extractClaims("```\nI created src/fake.js and tests pass\n```").length, 0, "code blocks are not claims");
 });
+
+test("forgiving tool arguments: aliases and lone objects are normalized (small models), real mistakes still rejected", async () => {
+  const r = await rig(); await r.fs.writeFile("a.js", "const x = 1;\n");
+  await r.call("read_file", { file: "a.js" });
+  const x = await r.call("patch_file", { file_path: "a.js", edit: { old: "x = 1", new: "x = 2" } });
+  assert.equal(x.ok, true, x.output); assert.equal(await r.fs.readFile("a.js"), "const x = 2;\n");
+  assert.equal((await r.call("write_file", { path: "b.js", text: "hi" })).ok, true);
+  const bad = await r.call("patch_file", { path: "a.js", edits: [{ replace: "x" }] }); assert.equal(bad.ok, false); assert.match(bad.output, /search: required/);
+});

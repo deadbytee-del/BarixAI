@@ -1,6 +1,21 @@
 // Minimal JSON-Schema validator (type, required, enum, min/max, items, properties, additionalProperties:false).
 // Errors are written for a model to read and self-correct from.
+/** Remap well-known alias keys (schema property `aliases`) and wrap a lone object/value where an array is expected. */
+function normalize(schema, value) {
+  if (schema.type === "array" && value !== null && !Array.isArray(value) && typeof value === "object" && schema.items) return [normalize(schema.items, value)];
+  if (schema.type === "array" && schema.items && Array.isArray(value)) return value.map((v) => normalize(schema.items, v));
+  if (schema.type === "object" && schema.properties && value && typeof value === "object" && !Array.isArray(value)) {
+    const out = { ...value };
+    for (const [k, sub] of Object.entries(schema.properties)) {
+      if (!(k in out)) for (const a of sub.aliases ?? []) if (a in out) { out[k] = out[a]; delete out[a]; break; }
+      if (k in out) out[k] = normalize(sub, out[k]);
+    }
+    return out;
+  }
+  return value;
+}
 export function validate(schema, value, path = "args") {
+  if (path === "args") value = normalize(schema, value);
   const errs = [];
   const t = schema.type;
   const actual = value === null ? "null" : Array.isArray(value) ? "array" : typeof value;

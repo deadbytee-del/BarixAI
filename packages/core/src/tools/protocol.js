@@ -18,7 +18,7 @@ export function renderToolDefs(tools) {
 }
 export const PROTOCOL_HELP = `To use a tool, emit exactly:
 <barix:call tool="TOOL_NAME">{"param": "value"}</barix:call>
-The body is one JSON object. You may emit several calls in one reply; read-only calls run in parallel, edits run in order. After calls, STOP and wait: results arrive in the next message as <barix:result>. Never invent results. When you need no tool, reply normally.`;
+The body is one JSON object. Emit at most 3 calls per reply; read-only calls run in parallel, edits run in order. Never repeat a call whose result you already have. After calls, STOP and wait: results arrive in the next message as <barix:result>. Never invent results. When you need no tool, reply normally.`;
 
 export function parseToolCalls(text) {
   const calls = [], errors = []; const spans = [];

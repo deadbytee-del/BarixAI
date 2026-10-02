@@ -30,6 +30,7 @@ export class Router {
       if (!st.enabled) { reject("disabled"); continue; }
       if (st.openUntil > this.clock()) { reject(`circuit open for ${Math.ceil((st.openUntil - this.clock()) / 1000)}s (${st.lastError})`); continue; }
       if (vision && !p.caps.vision) { reject("no vision support"); continue; }
+      if (needs.localOnly && !["browser-local", "local-machine"].includes(p.kind)) { reject("privacy: request is local-only"); continue; }
       if (promptTokens + Math.min(maxTokens, 256) > p.caps.window) { reject(`window ${p.caps.window} < prompt ${promptTokens}`); continue; }
       const lim = this.limiter.check(p.id, promptTokens + maxTokens); if (!lim.ok) { reject(lim.reason); continue; }
       let h = { ok: true }; try { h = (await Promise.race([p.health?.() ?? { ok: true }, new Promise((r) => setTimeout(() => r({ ok: false, reason: "health timeout" }), 1500))])); } catch (e) { h = { ok: false, reason: e.message }; }

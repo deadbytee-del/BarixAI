@@ -22,7 +22,7 @@ export class ToolRegistry {
    * Barix tool selection: show the model only tools relevant to the task (smaller prompt, fewer wrong calls).
    * `groups` come from task understanding.
    */
-  select(caps, groups) { const g = new Set(["core", ...groups]); return this.available(caps).filter((t) => g.has(t.group)); }
+  select(caps, groups, { maxTier = 2 } = {}) { const g = new Set(["core", ...groups]); return this.available(caps).filter((t) => g.has(t.group) && (t.tier ?? 1) <= maxTier); }
   suggest(name) {
     const scored = this.all().map((t) => ({ t, d: lev(name, t.name) })).sort((a, b) => a.d - b.d); return scored[0] && scored[0].d <= Math.max(3, name.length / 3) ? scored[0].t.name : null;
   }

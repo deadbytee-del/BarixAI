@@ -26,7 +26,7 @@ export function toChatMessages(messages) {
   const out = [];
   for (const m of messages) {
     const role = m.role === "tool" ? "user" : m.role;
-    const content = m.role === "tool" ? `<barix:result tool="${m.name ?? "tool"}">\n${m.content}\n</barix:result>` : m.content;
+    const content = m.role === "tool" ? `<barix:result${m.tool_call_id ? ` id="${m.tool_call_id}"` : ""} tool="${m.name ?? "tool"}">\n${m.content}\n</barix:result>` : m.content;
     const last = out[out.length - 1];
     if (last && last.role === role && role !== "system") last.content += "\n\n" + content; else out.push({ role, content });
   }

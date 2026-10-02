@@ -31,7 +31,7 @@ export class ContextEngine {
    * @param {{systemPrompt:string, window:number, reserveOutput?:number, mode?:"coding"|"chat"|"research", query?:string,
    *   needs?:{code?:boolean, recall?:boolean}, mentionedFiles?:string[], imageTokens?:number, maxSegmentTokens?:number}} o
    */
-  async build({ systemPrompt, window, reserveOutput = 1024, mode = "chat", query, needs = {}, mentionedFiles = [], imageTokens = 0, maxSegmentTokens }) {
+  async build({ systemPrompt, window, reserveOutput = 1024, mode = "chat", query, needs = {}, mentionedFiles = [], imageTokens = 0, maxSegmentTokens, style = "" }) {
     const t0 = now(); const c = this.counter; const rep = { sections: {}, dropped: [], retrieved: { code: [], history: [] } };
     const avail = Math.floor(window * (1 - this.safety)) - reserveOutput;
     if (avail < 512) throw new Error(`window ${window} too small for output reserve ${reserveOutput}`);
@@ -73,6 +73,7 @@ export class ContextEngine {
 
     // 3) assemble the packet
     const parts = [];
+    if (style) parts.push(style);
     if (taskTxt) parts.push(`### Task state\n${taskTxt}`);
     if (recalled.text) parts.push(`### Remembered\n${recalled.text}`);
     if (summaries.text) parts.push(`### Earlier in this conversation (compacted; [#n] = segment number, recall to expand)\n${summaries.text}`);
