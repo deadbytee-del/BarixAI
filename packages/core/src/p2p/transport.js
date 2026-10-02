@@ -43,3 +43,11 @@ export function dataChannelTransport(dc, label = "webrtc-peer") {
 /** Browser/Node WebSocket (client or `ws` server socket) as a Barix transport. Same wire format as WebRTC. */
 export function webSocketTransport(ws, label = "websocket-peer") { return dataChannelTransport(ws, label); }
 export function connectWebSocket(url, { WS = globalThis.WebSocket, label } = {}) { const ws = new WS(url); return webSocketTransport(ws, label ?? url); }
+
+/** MessagePort (Worker <-> Worker/page) as a Barix transport: used to isolate local inference in its own worker. */
+export function messagePortTransport(port, label = "message-port") {
+  const handlers = [], closers = []; let closed = false;
+  port.onmessage = (ev) => { if (ev.data?.__barixClose) { closed = true; closers.forEach((h) => h()); return; } for (const h of handlers) h(ev.data); };
+  port.start?.();
+  return { peerLabel: label, ready: Promise.resolve(), send(m) { if (closed) throw new BarixError("ECLOSED", "transport closed"); port.postMessage(m); }, onMessage: (fn) => handlers.push(fn), onClose: (fn) => closers.push(fn), close() { if (closed) return; closed = true; try { port.postMessage({ __barixClose: true }); } catch {} port.close?.(); closers.forEach((h) => h()); } };
+}

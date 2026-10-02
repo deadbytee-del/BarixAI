@@ -142,7 +142,8 @@ export class BarixAgent {
     if (!ran && plan.needs.verify && ledger.changedFiles().length && this.capabilities.exec) {
       const lastMut = [...ledger.records].reverse().find((r) => r.ok && ["fs-write", "fs-delete", "fs-move"].includes(r.kind))?.seq ?? 0;
       const ranAfter = ["test", "build"].some((k) => (ledger.last(k)?.seq ?? 0) > lastMut);
-      if (!ranAfter) { const prof = await this.intel?.getProfile(); if (prof?.commands.test && (await runTool("test"))) {} else if (prof?.commands.build) await runTool("build"); }
+      if (!ranAfter) { const prof = await this.intel?.getProfile(); const has = async (k) => (this.runners?.[k] ? this.runners[k]() : !!prof?.commands[k]);
+        if ((await has("test")) && (await runTool("test"))) {} else if (await has("build")) await runTool("build"); }
     }
     if (failed) { await store.append({ role: "user", text: "Barix verification: the run above FAILED. Read the output, fix the cause, and re-run before answering.", meta: { system: true } }); return { continueLoop: true, notes: [] }; }
     if (ran) { const again = await ledger.verify(answer); verification.unverified = again.unverified; verification.contradicted = again.contradicted; verification.verified = again.verified; verification.claims = again.claims; verification.ok = again.ok; }

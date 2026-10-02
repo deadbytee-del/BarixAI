@@ -53,3 +53,9 @@ export async function nodeTreeSitter() {
     loadGrammar: (n) => readFile(join(dir, `tree-sitter-${n}.wasm`)),
   });
 }
+
+/** Browser loader: web-tree-sitter runtime + grammars fetched lazily from `baseUrl` (relative to the page; works under any Pages subpath). */
+export function browserTreeSitter({ baseUrl, loadModule }) {
+  const base = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
+  return new TreeSitterRuntime({ loadModule, locateFile: (f) => base + f, loadGrammar: async (n) => { const r = await fetch(`${base}tree-sitter-${n}.wasm`); if (!r.ok) throw new Error(`grammar ${n}: HTTP ${r.status}`); return new Uint8Array(await r.arrayBuffer()); } });
+}

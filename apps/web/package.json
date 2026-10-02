@@ -1,0 +1,11 @@
+{
+  "name": "barix-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Barix browser app (static, GitHub Pages compatible).",
+  "dependencies": {
+    "@barix/core": "*",
+    "esbuild-wasm": "^0.28.2"
+  }
+}

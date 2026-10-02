@@ -44,10 +44,10 @@ export class RemoteWorker {
   }
 
   /** A Barix Provider backed by this worker. */
-  provider() {
+  provider({ kind = "barix-worker", id } = {}) {
     const w = this; const a = () => w.advert; const model = a().models[0];
     return {
-      get id() { return `worker:${a().workerId}`; }, kind: "barix-worker",
+      get id() { return id ?? `worker:${a().workerId}`; }, kind,
       caps: { model: model?.id ?? "unknown", family: model?.family ?? "unknown", quant: model?.quant, window: model?.window ?? 0, maxOutput: model?.maxOutput ?? 0, vision: !!model?.vision, streaming: true, quality: 0.5, hardware: a().hardware?.kind, remote: true, tps: model?.tps, prefill: false },
       async health() { if (w.closed) return { ok: false, reason: "disconnected" }; const ad = a(); if (ad.availability === "draining") return { ok: false, reason: "worker draining" }; if (ad.active >= ad.maxConcurrent) return { ok: false, reason: "worker busy" }; return { ok: true, latencyMs: w.latencyMs ?? 200, load: ad.load }; },
       async *generate(req) {
