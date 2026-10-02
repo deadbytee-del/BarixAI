@@ -29,7 +29,7 @@ export class TransformersProvider {
       // vision encoder. Dropping absent modality inputs is harmless for normal calls and required for prefix-cache reuse.
       const fwd = this.model.forward.bind(this.model); this.model.forward = (inp) => { for (const k of ["pixel_values", "image_grid_thw", "pixel_values_videos", "video_grid_thw"]) if (inp && inp[k] == null) delete inp[k]; return fwd(inp); };
       this.loadMs = now() - t0; return this;
-    })().catch((e) => { this._load = null; throw e; });
+    })().catch((e) => { this._load = null; this._loadError = String(e?.message ?? e).slice(0, 300); throw e; });
     return this._load;
   }
   /**
@@ -70,7 +70,9 @@ export class TransformersProvider {
   }
   /** Exact token counter backed by the model's real tokenizer (for calibration and billing-grade counts). */
   async exactCounter() { await this.load(); return (text) => this.tok(text).input_ids.size; }
-  async health() { try { await this.load(); return { ok: true, latencyMs: 0, load: this._busy ? 0.9 : 0 }; } catch (e) { return { ok: false, reason: e.message }; } }
+  // Never starts or waits for a (minutes-long) model load: the router gives health checks ~1.5 s, so a first-run download would always
+  // read as "unhealthy". Loading happens in generate(); a load that already FAILED is reported with its real reason.
+  async health() { if (this._loadError && !this._load) return { ok: false, reason: `model failed to load: ${this._loadError}` }; return { ok: true, latencyMs: 0, load: this._busy ? 0.9 : 0 }; }
 
   async *generate(req) {
     await this.load(); const { tf, tok, model } = this;

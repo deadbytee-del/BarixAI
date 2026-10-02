@@ -57,7 +57,7 @@ export class BarixAgent {
     while (steps < this.maxSteps) {
       if (signal?.aborted) throw Object.assign(new Error("aborted"), { name: "AbortError" });
       steps++;
-      const top = (await this.router.rank({ vision: false }))[0]; if (!top) throw new BarixError("ECAPACITY", "no provider is available to run Barix right now");
+      const ranked = await this.router.rank({ vision: false }); const top = ranked[0]; if (!top) throw new BarixError("ECAPACITY", `no provider is available to run Barix right now: ${ranked.rejected?.map((r) => `${r.id}: ${r.why}`).join("; ") || "none registered"}`);
       const caps = top.provider.caps; const reserve = Math.min(caps.maxOutput, Math.max(768, Math.round(plan.expectedOutputTokens * 1.2), tools.length ? 1800 : 0));
       const { messages, report } = await engine.build({ systemPrompt: system, window: caps.window, reserveOutput: reserve, mode: plan.mode, needs: plan.needs, mentionedFiles: plan.mentionedFiles, imageTokens, style: styleDirective(plan) });
       ev({ type: "context", step: steps, report });

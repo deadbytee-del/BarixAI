@@ -27,9 +27,14 @@ export async function detectLocalServers() {
   return found;
 }
 
+const TIERS = [
+  { model: "onnx-community/Qwen3.5-2B-ONNX", dtype: "q4", window: 12288, label: "Qwen3.5-2B q4 (CPU)" },
+  { model: "onnx-community/Qwen3.5-0.8B-ONNX", dtype: "q4", window: 8192, label: "Qwen3.5-0.8B q4 (CPU)" },
+];
+const size = (t) => (/4B/.test(t.model) ? 4 : /2B/.test(t.model) ? 2 : 0.8);
 export function ramTier() {
   const gb = os.totalmem() / 2 ** 30;
-  if (gb >= 24) return { model: "onnx-community/Qwen3.5-4B-ONNX", dtype: "q4", window: 16384, label: "Qwen3.5-4B q4 (CPU)" };
+  // 4B is available with --model, but on a CPU it decodes at only a few tokens/s; 2B is the largest sensible default.
   if (gb >= 10) return { model: "onnx-community/Qwen3.5-2B-ONNX", dtype: "q4", window: 12288, label: "Qwen3.5-2B q4 (CPU)" };
   return { model: "onnx-community/Qwen3.5-0.8B-ONNX", dtype: "q4", window: 8192, label: "Qwen3.5-0.8B q4 (CPU)" };
 }
@@ -47,10 +52,16 @@ export async function setupProviders(opts = {}, log = () => {}) {
     }
   }
   if (opts.builtin !== false && (!providers.length || opts.alsoBuiltin)) {
-    const t = opts.model ? { model: opts.model, dtype: opts.dtype ?? "q4", window: opts.window ?? 8192, label: opts.model } : ramTier();
-    const tf = await nodeTransformers({ cacheDir: opts.cacheDir });
-    providers.push(new TransformersProvider({ loadTransformers: async () => tf, model: t.model, dtype: t.dtype, device: "cpu", window: t.window, maxOutput: 1024, quality: /4B|9B/.test(t.model) ? 0.7 : /2B/.test(t.model) ? 0.55 : 0.4, progress: opts.onProgress, id: "builtin-onnx" }));
-    log(`provider: built-in ${t.label} — first use downloads the model; CPU inference is slow (a local llama.cpp/Ollama server or GPU is much faster)`);
+    const chosen = opts.model ? { model: opts.model, dtype: opts.dtype ?? "q4", window: opts.window ?? 8192, label: opts.model } : ramTier();
+    // Try the chosen model first; if it cannot load on this machine, say WHY and fall back to smaller ones instead of failing later with a vague error.
+    const ladder = [chosen, ...TIERS.filter((x) => x.model !== chosen.model && size(x) < size(chosen))]; const tf = await nodeTransformers({ cacheDir: opts.cacheDir }); const errors = [];
+    for (const t of ladder) {
+      const p = new TransformersProvider({ loadTransformers: async () => tf, model: t.model, dtype: t.dtype, device: "cpu", window: t.window, maxOutput: 1024, quality: /4B|9B/.test(t.model) ? 0.7 : /2B/.test(t.model) ? 0.55 : 0.4, progress: opts.onProgress, id: "builtin-onnx" });
+      log(`loading built-in ${t.label} — the first run downloads the model; CPU inference is slow (a local llama.cpp/Ollama server or GPU is much faster)`);
+      try { await p.load(); providers.push(p); log(`provider: built-in ${t.label} ready`); break; }
+      catch (e) { errors.push(`${t.label}: ${String(e?.message ?? e).split("\n")[0].slice(0, 300)}`); log(`✗ could not load ${t.label}: ${errors.at(-1).split(": ").slice(1).join(": ")}`); }
+    }
+    if (!providers.length) throw Object.assign(new Error(`No model could be loaded on this machine.\n  ${errors.join("\n  ")}\nTry: install the Microsoft Visual C++ Redistributable (Windows), update Node.js to 20+, free some disk space, check your internet connection, or point Barix at a local server (Ollama / llama.cpp) with --endpoint.`), { code: "ENOMODEL" });
   }
   return providers;
 }
