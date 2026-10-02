@@ -1,0 +1,144 @@
+{
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "cores": 4,
+    "ramGB": 15.7,
+    "platform": "linux/x64",
+    "node": "v22.22.0"
+  },
+  "date": "2026-10-02T06:28:34.821Z",
+  "filesystem": {
+    "memory": {
+      "files": 1500,
+      "writeOpsPerSec": 13484,
+      "readOpsPerSec": 224551,
+      "patchOpsPerSec": 413,
+      "grepMs": 1.36,
+      "grepHits": 600,
+      "auditMs": 7.42,
+      "auditOk": true
+    },
+    "node-disk": {
+      "files": 1500,
+      "writeOpsPerSec": 1626,
+      "readOpsPerSec": 5785,
+      "patchOpsPerSec": 286,
+      "grepMs": 7.38,
+      "grepHits": 600,
+      "auditMs": 54.8,
+      "auditOk": true
+    }
+  },
+  "indexing": {
+    "files": 800,
+    "symbols": 6401,
+    "chunks": 1601,
+    "fullIndexMs": 1327,
+    "filesPerSec": 603,
+    "incrementalUpdateMs": 4.8,
+    "noChangeReindexMs": 7.5,
+    "reparsesOnNoChange": 0,
+    "heapMB": 28.6,
+    "retrievalMs": {
+      "p50": 41.35,
+      "p95": 78.96,
+      "max": 95.55,
+      "n": 150
+    },
+    "semanticQueryTop1": "src/m3/target.js",
+    "parser": {
+      "treeSitter": 801,
+      "fallback": 0
+    }
+  },
+  "context3_5M": {
+    "targetTokens": 3500000,
+    "window": 32768,
+    "embed": false,
+    "segments": 12699,
+    "totalTokens": 3500914,
+    "liveTokens": 7057,
+    "archivedTokens": 3493857,
+    "evicted": 175970,
+    "summaries": "L5:924t L5:942t L4:804t",
+    "summaryTokens": 2670,
+    "ingestSec": 3.9,
+    "compactSec": 2.9,
+    "tokensPerSecIngest": 895181,
+    "needlesPlanted": 24,
+    "needlesFound": 24,
+    "foundVia": {
+      "summary": 0,
+      "recall": 24
+    },
+    "missing": [],
+    "buildMs": {
+      "p50": 7.2,
+      "p95": 9.5,
+      "max": 13.2
+    },
+    "memoryMB": {
+      "heapBefore": 5.1,
+      "heapAfter": 207.1,
+      "rss": 325,
+      "pageCacheResidentChars": 1648293
+    },
+    "corpusMB": 12.5
+  },
+  "model": {
+    "id": "Qwen3.5-0.8B ONNX q4 (CPU, onnxruntime-node)",
+    "loadWarmMs": 28949,
+    "runs": [
+      {
+        "promptTokens": 147,
+        "firstTokenMs": 1323,
+        "completionTokens": 48,
+        "totalMs": 6278,
+        "decodeTokPerSec": 9.49
+      },
+      {
+        "promptTokens": 947,
+        "firstTokenMs": 10838,
+        "completionTokens": 48,
+        "totalMs": 16126,
+        "decodeTokPerSec": 8.89
+      },
+      {
+        "promptTokens": 3459,
+        "firstTokenMs": 40970,
+        "completionTokens": 44,
+        "totalMs": 47388,
+        "decodeTokPerSec": 6.7
+      }
+    ],
+    "prefillTokPerSec": [
+      111,
+      87,
+      84
+    ]
+  },
+  "tokenizer": {
+    "estimatorErrorPct": [
+      10.3,
+      10.6,
+      0.1
+    ],
+    "calibratedScale": 0.919,
+    "calibratedErrorPct": [
+      1.4,
+      1.6,
+      8.2
+    ],
+    "realTokenizerCallsPerSec": 235,
+    "cachedEstimatorCallsPerSec": 22222
+  },
+  "embeddings": {
+    "neuralModel": "Xenova/all-MiniLM-L6-v2 q8",
+    "neuralLoadMs": 1343,
+    "neuralChunksPerSec": 353,
+    "hashChunksPerSec": 26446
+  },
+  "memoryMB": {
+    "rss": 5896
+  }
+}
