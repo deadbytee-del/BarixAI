@@ -50,7 +50,7 @@ export class HybridIndex {
    * @param {string} query
    * @param {{k?:number, filter?:(id:string, meta:object)=>boolean, symbolHits?:Map<string,number>|((q:string)=>Map<string,number>), mmr?:number|false, minScore?:number}} [o]
    */
-  async search(query, { k = 10, filter, symbolHits, mmr = 0.75, pool = Math.max(k * 4, 30) } = {}) {
+  async search(query, { k = 10, filter, symbolHits, mmr = 0.75, pool = Math.max(k * 4, 30), minVector = -1 } = {}) {
     this.stats.searches++;
     const f = filter ? (id) => filter(id, this.meta.get(id)) : undefined;
     const [lex, vec] = await Promise.all([
@@ -61,7 +61,7 @@ export class HybridIndex {
     const fused = new Map(); const RRF = 60;
     const bump = (id, rank, w, src, raw) => { const e = fused.get(id) ?? fused.set(id, { id, score: 0, sources: {} }).get(id); e.score += w / (RRF + rank); e.sources[src] = { rank, score: raw }; };
     lex.forEach((r, i) => bump(r.id, i + 1, this.w.lexical, "lexical", r.score));
-    vec.forEach((r, i) => bump(r.id, i + 1, this.w.vector, "vector", r.score));
+    vec.filter((r) => r.score >= minVector).forEach((r, i) => bump(r.id, i + 1, this.w.vector, "vector", r.score));
     if (sym) [...sym].sort((a, b) => b[1] - a[1]).forEach(([id, s], i) => { if (this.meta.has(id) && (!f || f(id))) bump(id, i + 1, this.w.symbol, "symbol", s); });
     let ranked = [...fused.values()].sort((a, b) => b.score - a.score);
     if (mmr !== false && ranked.length > 1) ranked = this.#mmr(ranked.slice(0, pool), k, mmr);
