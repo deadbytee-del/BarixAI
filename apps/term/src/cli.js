@@ -3,7 +3,8 @@
 import readline from "node:readline";
 import path from "node:path";
 import os from "node:os";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile, rm, appendFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { createBarix, NodeBackend, nodeTreeSitter, GitHubClient, githubTools, parseGitHubUrl, OUTPUT_TARGETS } from "@barix/core";
 import { execTools } from "./exec-tools.js";
 import { gitTools, Git } from "./git.js";
@@ -147,7 +148,18 @@ async function doctor(out) {
   try { const g = await new Git(process.cwd()).run(["--version"]); out(`${C.green}✓${C.off} ${g.out}`); } catch (e) { out(`${C.red}✗${C.off} git: ${e.message}`); }
   const servers = await detectLocalServers(); out(servers.length ? servers.map((x) => `${C.green}✓${C.off} local server: ${x.name} ${x.baseUrl} model ${x.model}${x.window ? ` window ${x.window}` : " (window unknown: pass --window)"}`).join("\n") : `${C.dim}· no local llama.cpp/Ollama/LM Studio server found; BarixTerm will use the built-in ONNX model (CPU)${C.off}`);
   const t = await githubToken(); out(t ? `${C.green}✓${C.off} GitHub token available (env or gh)` : `${C.dim}· no GitHub token: public repos work; private repos/publishing need GITHUB_TOKEN or \`gh auth login\`${C.off}`);
+  await doctorModel(out);
   try { const rt = await nodeTreeSitter(); const p = await rt.parserFor("javascript"); out(p ? `${C.green}✓${C.off} tree-sitter WASM parsers` : `${C.yellow}!${C.off} tree-sitter unavailable; using the fallback scanner`); } catch (e) { out(`${C.yellow}!${C.off} tree-sitter: ${e.message}`); }
+}
+
+async function doctorModel(out) {
+  const ok = (t) => out(`${C.green}✓${C.off} ${t}`), bad = (t) => out(`${C.red}✗${C.off} ${t}`);
+  out(`${C.dim}app: ${path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..")} (BarixTerm ${VERSION})${C.off}`);
+  try { await import("onnxruntime-node"); ok("onnxruntime-node (native model runtime) loads"); } catch (e) { bad(`onnxruntime-node failed to load: ${String(e.message).split("\n")[0]}\n    → on Windows install the "Microsoft Visual C++ Redistributable (x64)" and run BarixTerm.bat --update, then retry`); }
+  const dir = path.join(os.homedir(), ".barix", "models"); try { await mkdir(dir, { recursive: true }); const t = path.join(dir, ".w"); await writeFile(t, "x"); await rm(t); ok(`model folder writable: ${dir}`); } catch (e) { bad(`cannot write to ${dir}: ${e.message}`); }
+  try { const r = await fetch("https://huggingface.co/onnx-community/Qwen3.5-0.8B-ONNX/resolve/main/config.json", { method: "HEAD", signal: AbortSignal.timeout(8000) }); r.ok ? ok("huggingface.co reachable (model downloads work)") : bad(`huggingface.co answered ${r.status}`); } catch (e) { bad(`cannot reach huggingface.co: ${e.cause?.code ?? e.message} (firewall/proxy/offline? models cannot be downloaded)`); }
+  try { const { statfs } = await import("node:fs/promises"); const st = await statfs(dir); const gb = (st.bavail * st.bsize) / 2 ** 30; gb < 3 ? bad(`only ${gb.toFixed(1)} GB free on the model drive (need ~1–3 GB)`) : ok(`${gb.toFixed(0)} GB free for models`); } catch { /* statfs unavailable */ }
+  try { const t0 = Date.now(); const [p] = await setupProviders({ cacheDir: dir, onProgress: progressBar(process.stdout) }, (l) => out(`${C.dim}${l}${C.off}`)); ok(`model loads (${((Date.now() - t0) / 1000).toFixed(1)}s) and is ready`); void p; } catch (e) { bad(e.message); }
 }
 
 async function publishCommand({ b, dir, github, f, confirm, out }) {
