@@ -81,7 +81,7 @@ test("tool-call mistakes are corrected by Barix, not the user: bad JSON, unknown
   const { b, model } = await rig([
     `<barix:call tool="read_file">{path: src/calc.js}</barix:call>`,
     call("read_fil", { path: "src/calc.js" }),
-    call("patch_file", { path: "src/calc.js", edits: [{ search: "a - b", replace: "a * b" }] }),
+    call("patch_file", { path: "src/calc.js", edits: [{ search: "a / b", replace: "a * b" }] }),
     call("read_file", { path: "src/calc.js" }),
     "The file `src/calc.js` contains an `add` function.",
   ], PROJECT);

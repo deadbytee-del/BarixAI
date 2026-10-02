@@ -43,7 +43,7 @@ test("executor: guards block blind edits, writes are verified, evidence recorded
   let x = await r.call("patch_file", { path: "a.js", edits: [{ search: "x", replace: "y" }] }); assert.equal(x.ok, false); assert.match(x.output, /No such file/);
   x = await r.call("write_file", { path: "src/a.js", content: "export function add(a, b) { return a + b; }\n" }); assert.equal(x.ok, true); assert.match(x.output, /Verified on disk.*syntax OK/s);
   await r.fs.writeFile("src/blind.js", "export const z = 1;\n"); // exists, but Barix never read it
-  x = await r.call("patch_file", { path: "src/blind.js", edits: [{ search: "1", replace: "2" }] }); assert.equal(x.ok, false); assert.match(x.output, /Read src\/blind.js .* before editing/);
+  x = await r.call("patch_file", { path: "src/blind.js", edits: [{ search: "z = 7", replace: "z = 2" }] }); assert.equal(x.ok, false); assert.match(x.output, /Read src\/blind.js .* before editing/);
   x = await r.call("write_file", { path: "src/blind.js", content: "x" }); assert.equal(x.ok, false); assert.match(x.output, /already exists/);
   x = await r.call("read_file", { path: "src/a.js" }); assert.match(x.output, /1  export function add/);
   x = await r.call("patch_file", { path: "src/a.js", edits: [{ search: "a + b", replace: "a - b" }] }); assert.equal(x.ok, true); assert.match(x.output, /\+export function add\(a, b\) \{ return a - b/);
@@ -106,4 +106,11 @@ test("forgiving tool arguments: aliases and lone objects are normalized (small m
   assert.equal(x.ok, true, x.output); assert.equal(await r.fs.readFile("a.js"), "const x = 2;\n");
   assert.equal((await r.call("write_file", { path: "b.js", text: "hi" })).ok, true);
   const bad = await r.call("patch_file", { path: "a.js", edits: [{ replace: "x" }] }); assert.equal(bad.ok, false); assert.match(bad.output, /search: required/);
+});
+
+test("auto-read: a blind patch whose search text exactly matches proves the model knew the file, so Barix reads it itself; wrong guesses are still blocked", async () => {
+  const r = await rig(); await r.fs.writeFile("a.js", "const x = 1;\nconst y = 2;\n"); // never read through a tool
+  let x = await r.call("patch_file", { path: "a.js", edits: [{ search: "const x = 1;", replace: "const x = 9;" }] }); assert.equal(x.ok, true, x.output); assert.match(await r.fs.readFile("a.js"), /x = 9/);
+  await r.fs.writeFile("b.js", "let a = 1;\n");
+  x = await r.call("patch_file", { path: "b.js", edits: [{ search: "let a = 2;", replace: "let a = 3;" }] }); assert.equal(x.ok, false); assert.match(x.output, /before editing/);
 });

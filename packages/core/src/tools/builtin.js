@@ -21,8 +21,14 @@ async function afterWrite(ctx, path, action) {
   const syntax = errs === null ? "no grammar for this file type (syntax not checked)" : errs.length ? `SYNTAX ERRORS:\n${errs.slice(0, 5).map((e) => `  line ${e.line}:${e.column} ${e.message}${e.text ? ` near ${JSON.stringify(e.text)}` : ""}`).join("\n")}` : "syntax OK";
   return { text, hash, syntax, errors: errs };
 }
-const needRead = (ctx, args) => {
+/** Blind edits are blocked — unless the edit's exact search text is present in the file, which proves the model knew its content.
+ *  Then Barix reads the file itself (saving a full model round-trip). */
+const needRead = async (ctx, args) => {
   if (!ctx.fs.exists(args.path)) return `No such file: ${args.path}. Use write_file to create it, or list_dir/find_files to locate it.`;
+  if (!ctx.readSet.has(args.path) && Array.isArray(args.edits) && args.edits.length) {
+    const cur = await ctx.fs.readFile(args.path).catch(() => null);
+    if (cur !== null && args.edits.every((e) => typeof e.search === "string" && e.search && cur.includes(e.search))) { ctx.readSet.set(args.path, hash53(cur)); return null; }
+  }
   if (!ctx.readSet.has(args.path)) return `Read ${args.path} with read_file before editing it (Barix blocks blind edits).`;
   return null;
 };
@@ -82,7 +88,7 @@ export const builtinTools = [
   {
     name: "patch_file", group: "core", mutating: true, description: "Edit a file you have read with exact search/replace edits. Each `search` must match exactly once (or set all:true). Prefer this over rewriting files.",
     parameters: P({ path: PATH("file path"), edits: { type: "array", aliases: ["edit", "changes", "patches", "replacements"], items: P({ search: S("exact existing text", { aliases: ["old", "find", "old_string", "oldText", "original", "from"] }), replace: S("replacement text", { aliases: ["new", "new_string", "newText", "replacement", "with", "to"] }), all: { type: "boolean" } }, ["search"]) } }, ["path", "edits"]),
-    async guard(a, ctx) { return needRead(ctx, a) ?? (await staleCheck(ctx, a)); },
+    async guard(a, ctx) { return (await needRead(ctx, a)) ?? (await staleCheck(ctx, a)); },
     async run({ path, edits }, ctx) {
       let r; try { r = await ctx.fs.patchFile(path, edits); } catch (e) { return bad(`${e.message}\nRe-read the file (read_file) and use text that matches exactly.`); }
       const v = await afterWrite(ctx, path, "patch"); const stats = `+${r.add} -${r.del}`;
@@ -93,7 +99,7 @@ export const builtinTools = [
   {
     name: "apply_patch", group: "core", tier: 2, mutating: true, description: "Apply a unified diff (single file) to a file you have read.",
     parameters: P({ path: PATH("file path"), diff: S("unified diff with @@ hunks") }, ["path", "diff"]),
-    async guard(a, ctx) { return needRead(ctx, a) ?? (await staleCheck(ctx, a)); },
+    async guard(a, ctx) { return (await needRead(ctx, a)) ?? (await staleCheck(ctx, a)); },
     async run({ path, diff }, ctx) {
       let r; try { r = await ctx.fs.applyPatch(path, diff); } catch (e) { return bad(`${e.message}. Re-read the file and regenerate the diff.`); }
       const v = await afterWrite(ctx, path, "patch");
