@@ -1,0 +1,22 @@
+{
+  "name": "barix",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Barix: a custom AI runtime (context, memory, coding, tools, verification, routing) around an open-weight foundation model.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "node --test packages/core/test apps/term/test",
+    "build:web": "node scripts/build-web.mjs",
+    "bench": "node scripts/bench.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@huggingface/transformers": "^4.3.0"
+  }
+}

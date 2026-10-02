@@ -1,0 +1,9 @@
+{
+  "name": "@barix/core",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Barix core: isomorphic (browser + Node) intelligence runtime.",
+  "main": "src/index.js",
+  "exports": { ".": "./src/index.js", "./*": "./src/*" },
+  "sideEffects": false
+}
