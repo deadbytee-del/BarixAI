@@ -14,7 +14,7 @@ export function chromePath() {
   return null;
 }
 export async function launch(extraArgs = []) {
-  return chromium.launch({ executablePath: chromePath(), headless: true, args: ["--no-sandbox", "--enable-unsafe-webgpu", "--enable-features=Vulkan", ...extraArgs] });
+  return chromium.launch({ ...(chromePath() ? { executablePath: chromePath() } : {}), headless: true, args: ["--no-sandbox", "--enable-unsafe-webgpu", "--enable-features=Vulkan", ...extraArgs] });
 }
 export const site = (base = "/BarixAI/") => serve({ dir: DIST, base });
 
